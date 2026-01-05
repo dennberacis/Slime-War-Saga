@@ -1,0 +1,7 @@
+{
+  "name": "Slime War: Saga",
+  "description": "A refined 2D lane-based strategy game with cute anime fantasy aesthetics. Command your slime army in light RTS combat.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
