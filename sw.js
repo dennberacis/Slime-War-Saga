@@ -1,53 +1,55 @@
 
-const CACHE_NAME = 'slime-war-v2';
+const CACHE_NAME = 'slime-war-v3';
 const ASSETS_TO_CACHE = [
   './',
+  './index.html',
   './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // Force the waiting service worker to become the active service worker
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS_TO_CACHE).catch(err => {
-        console.error('Failed to cache core assets:', err);
+        console.warn('Pre-cache failed, continuing anyway:', err);
       });
     })
   );
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim()); // Become available to all pages
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE_NAME) {
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    }).then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener('fetch', (event) => {
+  // Required fetch handler for PWA installability
   event.respondWith(
     caches.match(event.request).then((response) => {
-      // Cache hit - return response
-      if (response) {
-        return response;
-      }
-      // Clone the request because it's a stream and can only be consumed once
-      const fetchRequest = event.request.clone();
-
-      return fetch(fetchRequest).then((response) => {
-        // Check if we received a valid response
-        if (!response || response.status !== 200 || response.type !== 'basic') {
-          return response;
+      return response || fetch(event.request).then((fetchResponse) => {
+        if (!fetchResponse || fetchResponse.status !== 200 || fetchResponse.type !== 'basic') {
+          return fetchResponse;
         }
-
-        // Clone the response because it's a stream
-        const responseToCache = response.clone();
-
+        
+        const responseToCache = fetchResponse.clone();
         caches.open(CACHE_NAME).then((cache) => {
-          // Only cache http/https requests, skip chrome-extension:// etc
           if (event.request.url.startsWith('http')) {
-             cache.put(event.request, responseToCache);
+            cache.put(event.request, responseToCache);
           }
         });
-
-        return response;
+        return fetchResponse;
       });
+    }).catch(() => {
+      // Offline fallback can go here if needed
     })
   );
 });

@@ -7,13 +7,14 @@
   "scope": ".",
   "display": "standalone",
   "background_color": "#020617",
-  "theme_color": "#020617",
+  "theme_color": "#0f172a",
   "orientation": "landscape",
   "icons": [
     {
       "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48cGF0aCBmaWxsPSIjMzhiZGY4IiBkPSJNMjU2IDY0QzE1MCA2NCA2NCAxNTAgNjQgMjU2YzAgMTA2IDg2IDE5MiAxOTIgMTkyczE5Mi04NiAxOTItMTkyYzAtMTA2LTg2LTE5Mi0xOTItMTkyem0tNjQgMTYwYzE3LjcgMCAzMiAxNC4zIDMyIDMycy0xNC4zIDMyLTMyIDMyLTMyLTE0LjMtMzItMzIgMTQuMy0zMiAzMi0zMnptMTI4IDBjMTcuNyAwIDMyIDE0LjMgMzIgMzJzLTE0LjMgMzItMzIgMzItMzItMTQuMy0zMi0zMiAxNC4zLTMyIDMyLTMyeiIvPjwvc3ZnPg==",
       "sizes": "192x192 512x512",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }

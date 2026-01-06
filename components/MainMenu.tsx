@@ -18,7 +18,8 @@ import {
   Banknote,
   ArrowRightLeft,
   X,
-  Download
+  Download,
+  Gift
 } from 'lucide-react';
 
 interface MainMenuProps {
@@ -30,9 +31,16 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
   const [showModeSelector, setShowModeSelector] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
+    // Check if app is already installed/standalone
+    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true) {
+      setIsStandalone(true);
+    }
+
     const handleBeforeInstallPrompt = (e: any) => {
+      console.log('Capture beforeinstallprompt');
       e.preventDefault();
       setDeferredPrompt(e);
     };
@@ -49,7 +57,10 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
+        console.log('User accepted the install prompt');
         setDeferredPrompt(null);
+      } else {
+        console.log('User dismissed the install prompt');
       }
     }
   };
@@ -65,14 +76,12 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
           alt="Battlefield"
         />
         
-        {/* Animated Background Slimes */}
         <div className="absolute inset-0 opacity-30">
            <DancingSlime color="bg-sky-400" top="60%" left="8%" delay="0s" scale="scale-100" />
            <DancingSlime color="bg-purple-400" top="55%" left="88%" delay="0.5s" scale="scale-75" />
            <DancingSlime color="bg-emerald-400" top="72%" left="42%" delay="1s" scale="scale-110" />
         </div>
 
-        {/* Floating Crystals */}
         {[...Array(12)].map((_, i) => (
           <div 
             key={i} 
@@ -91,7 +100,6 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
 
       {/* Top HUD: Profile & Economy */}
       <div className="relative z-30 pt-4 px-6 md:pt-6 md:px-10 flex justify-between items-start">
-        {/* Profile Card */}
         <div className="flex items-center space-x-3 bg-black/60 backdrop-blur-2xl p-2 rounded-2xl border border-white/10 shadow-xl hover:border-sky-500/40 transition-all cursor-pointer group active:scale-95">
           <div className="relative">
             <div className="w-10 h-10 md:w-14 md:h-14 bg-gradient-to-br from-sky-600 to-indigo-600 rounded-xl overflow-hidden border-2 border-white/20 shadow-lg group-hover:scale-105 transition-transform">
@@ -135,8 +143,24 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
         </div>
       </div>
 
-      {/* Hero Center Section: Play saga next to Conquest */}
+      {/* Hero Center Section */}
       <div className="flex-1 flex flex-col items-center justify-center relative z-10 px-6 -mt-2">
+        {/* Proactive Install Banner if Eligible */}
+        {deferredPrompt && !isStandalone && (
+          <div className="mb-6 animate-bounce">
+            <button 
+              onClick={handleInstallClick}
+              className="bg-sky-500/20 backdrop-blur-xl border border-sky-400/50 rounded-full px-6 py-2 flex items-center space-x-3 group hover:bg-sky-500/40 transition-all shadow-lg"
+            >
+              <Gift className="text-yellow-400 animate-pulse" size={18} />
+              <span className="text-[10px] md:text-xs font-black text-white uppercase tracking-widest">
+                Install to Home Screen & Claim <span className="text-sky-400">100 Gems!</span>
+              </span>
+              <Download size={14} className="text-white/60 group-hover:translate-y-1 transition-transform" />
+            </button>
+          </div>
+        )}
+
         <div className="text-center mb-6 md:mb-8 animate-float">
           <h1 className="text-5xl md:text-8xl font-black text-white header-font tracking-tighter italic drop-shadow-[0_0_20px_rgba(56,189,248,0.5)]">
             SLIME WAR
@@ -148,7 +172,6 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
           </div>
         </div>
 
-        {/* Primary Action Buttons: Play Next to Conquest */}
         <div className="flex flex-row items-stretch space-x-4 md:space-x-8 h-20 md:h-32">
           <button 
             onClick={() => setShowModeSelector(true)}
@@ -176,7 +199,7 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
         </div>
       </div>
 
-      {/* Grid Menu: Deck, Collection, Shop, etc. */}
+      {/* Grid Menu */}
       <div className="relative z-30 px-6 pb-6 md:pb-8 max-w-7xl mx-auto w-full">
         <div className="grid grid-cols-4 md:grid-cols-7 gap-3 md:gap-6">
           <MenuButton icon={<LayoutDashboard />} label="DECK" color="bg-indigo-600" />
@@ -190,18 +213,20 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
             color="bg-emerald-600" 
             onClick={() => setShowWithdrawModal(true)} 
           />
-          {deferredPrompt && (
+          {deferredPrompt && !isStandalone ? (
              <MenuButton 
                icon={<Download />} 
                label="INSTALL" 
-               color="bg-blue-600" 
+               color="bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)] animate-pulse" 
                onClick={handleInstallClick} 
              />
+          ) : (
+             <MenuButton icon={<ShieldCheck />} label="SECURE" color="bg-slate-700" />
           )}
         </div>
       </div>
 
-      {/* Mode Selection Modal */}
+      {/* Modals remain same... */}
       {showModeSelector && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md" onClick={() => setShowModeSelector(false)}></div>
@@ -236,7 +261,6 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
         </div>
       )}
 
-      {/* Withdrawal Modal */}
       {showWithdrawModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-lg" onClick={() => setShowWithdrawModal(false)}></div>
@@ -293,13 +317,6 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
            <TickerItem icon="💰" text="Cash out anytime with the new Withdrawal Portal!" color="text-sky-400" />
         </div>
       </div>
-      
-      <style>{`
-        .safe-area-inset {
-            padding-left: env(safe-area-inset-left);
-            padding-right: env(safe-area-inset-right);
-        }
-      `}</style>
     </div>
   );
 };
