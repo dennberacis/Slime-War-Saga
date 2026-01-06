@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { PlayerStats, SlimeUnit, SlimeType, Projectile } from '../types';
 import { SLIME_CONFIGS, getThemeForLevel } from '../constants';
-import { Sword, Undo2, Users, Sparkles, BrainCircuit } from 'lucide-react';
+import { Sword, Undo2, Users, BrainCircuit } from 'lucide-react';
 import { getBattleStrategy } from '../services/geminiService';
 
 interface BattlefieldProps {
@@ -44,17 +44,24 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
 
   // Fetch AI Strategy Tip on Start
   useEffect(() => {
+    let mounted = true;
     const fetchStrategy = async () => {
       const tip = await getBattleStrategy(level, playerStats.selectedDeck);
-      setAiTip(tip);
-      setTimeout(() => setIsStarting(false), 3500);
+      if (mounted) {
+        setAiTip(tip);
+        // Display strategy for at least 3 seconds
+        setTimeout(() => {
+          if (mounted) setIsStarting(false);
+        }, 3500);
+      }
     };
     fetchStrategy();
+    return () => { mounted = false; };
   }, [level, playerStats.selectedDeck]);
 
   useEffect(() => {
     const queueInterval = setInterval(() => {
-      if (spawnQueue.length > 0 && !isStarting) {
+      if (spawnQueue.length > 0 && !isStarting && !gameResult) {
         const next = spawnQueue[0];
         setSpawnQueue(prev => prev.slice(1));
         const config = SLIME_CONFIGS[next.type as SlimeType] || SLIME_CONFIGS.big_slime;
@@ -81,7 +88,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
       }
     }, 1000); 
     return () => clearInterval(queueInterval);
-  }, [spawnQueue, isStarting]);
+  }, [spawnQueue, isStarting, gameResult]);
 
   const requestSpawn = (type: SlimeType | 'big_slime', team: 'player' | 'enemy', isSummon = false) => {
     if (gameResult || isStarting) return;
@@ -94,9 +101,16 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
         if (playerGold < config.cost || (cooldowns[type] || 0) > 0) return;
         setPlayerGold(p => p - config.cost);
         setCooldowns(prev => ({ ...prev, [type]: 3000 }));
+        setTimeout(() => {
+          setCooldowns(c => {
+            const next = { ...c };
+            delete next[type];
+            return next;
+          });
+        }, 3000);
       } else {
         if (enemyGold < config.cost) return;
-        setEnemyGold(g => g - config.cost);
+        setEnemyGold(p => p - config.cost);
       }
     }
     setSpawnQueue(prev => [...prev, { type, team }]);
@@ -329,7 +343,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
                 <div className="p-4 bg-indigo-500/20 rounded-full mb-4">
                    <BrainCircuit size={48} className="text-indigo-400 animate-pulse" />
                 </div>
-                <h3 className="header-font text-2xl font-black text-white italic tracking-tighter mb-2">AI STRATEGY BRIEFING</h3>
+                <h3 className="header-font text-2xl font-black text-white italic tracking-tighter mb-2 uppercase">AI STRATEGY BRIEFING</h3>
                 <p className="text-indigo-200/70 text-center font-medium leading-relaxed italic">
                    {aiTip || "Analyzing battlefield conditions... Prepare for deployment."}
                 </p>

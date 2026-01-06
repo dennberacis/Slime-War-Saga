@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Slime War: Saga</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Quicksand:wght@300;500;700&display=swap" rel="stylesheet">
@@ -16,6 +16,7 @@
             font-family: 'Quicksand', sans-serif;
             user-select: none;
             color: #f8fafc;
+            -webkit-tap-highlight-color: transparent;
         }
         .header-font {
             font-family: 'Outfit', sans-serif;
@@ -58,20 +59,29 @@
         }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Mobile Safe Areas */
+        .safe-area-pt { padding-top: env(safe-area-inset-top); }
+        .safe-area-pb { padding-bottom: env(safe-area-inset-bottom); }
+        .safe-area-pl { padding-left: env(safe-area-inset-left); }
+        .safe-area-pr { padding-right: env(safe-area-inset-right); }
     </style>
 <script type="importmap">
 {
   "imports": {
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+    "lucide-react": "https://esm.sh/lucide-react@^0.475.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.3.0",
+    "react": "https://esm.sh/react@19.0.0",
+    "react-dom": "https://esm.sh/react-dom@19.0.0",
+    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/"
   }
 }
 </script>
 </head>
 <body>
     <div id="root"></div>
+    <script type="module" src="index.tsx"></script>
 </body>
 </html>

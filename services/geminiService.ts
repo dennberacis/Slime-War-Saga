@@ -1,23 +1,24 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-export const getBattleStrategy = async (level: number, playerUnits: string[]) => {
-  // Always create a new instance using process.env.API_KEY directly
+export const getBattleStrategy = async (level: number, playerUnits: string[]): Promise<string> => {
+  // Ensure we use the latest API KEY from the environment
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Suggest a strategy for Slime War: Crystal Saga level ${level}. My army consists of ${playerUnits.join(', ')}. Provide a short, heroic 2-sentence tip.`,
+      contents: `You are a high-command tactical AI for Slime War: Saga. Level: ${level}. Player Army: ${playerUnits.join(', ')}. Provide a short, heroic 1-2 sentence strategy tip for the commander.`,
       config: {
-        maxOutputTokens: 100,
-        temperature: 0.7
+        maxOutputTokens: 150,
+        temperature: 0.8,
+        thinkingConfig: { thinkingBudget: 0 } // Disable thinking for quick UI response
       }
     });
 
-    return response.text;
+    return response.text || "Hold the line! Use your Miners to build a strong economy before launching a mass Warrior assault.";
   } catch (error) {
-    console.error("AI strategy failed:", error);
-    return "Focus on building your miners first to sustain a large army of Slime Knights!";
+    console.warn("AI strategy briefing unavailable:", error);
+    return "Intelligence suggests focusing on early diamond collection. Protect your Miners at all costs!";
   }
 };
