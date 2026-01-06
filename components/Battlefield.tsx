@@ -45,18 +45,29 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
   // Fetch AI Strategy Tip on Start
   useEffect(() => {
     let mounted = true;
+
+    // Force game start after 7 seconds regardless of API status
+    const loadingTimer = setTimeout(() => {
+      if (mounted) setIsStarting(false);
+    }, 7000);
+
     const fetchStrategy = async () => {
-      const tip = await getBattleStrategy(level, playerStats.selectedDeck);
-      if (mounted) {
-        setAiTip(tip);
-        // Display strategy for 7 seconds
-        setTimeout(() => {
-          if (mounted) setIsStarting(false);
-        }, 7000);
+      try {
+        const tip = await getBattleStrategy(level, playerStats.selectedDeck);
+        if (mounted) {
+          setAiTip(tip);
+        }
+      } catch (e) {
+        // Silently fail to default tip
       }
     };
+    
     fetchStrategy();
-    return () => { mounted = false; };
+
+    return () => { 
+      mounted = false;
+      clearTimeout(loadingTimer);
+    };
   }, [level, playerStats.selectedDeck]);
 
   useEffect(() => {
@@ -470,38 +481,94 @@ const TowerVisual: React.FC<{ team: 'player'|'enemy'; hp: number; maxHp: number 
    }, [hp]);
    
    const theme = isPlayer 
-     ? { gradient: 'from-emerald-400 to-emerald-700', border: 'border-emerald-300/50', glow: 'shadow-[0_0_30px_rgba(52,211,153,0.4)]', swirl: 'text-emerald-300', hpBar: 'bg-emerald-500', hpBg: 'bg-emerald-950', bubble: 'bg-emerald-200' } 
-     : { gradient: 'from-rose-400 to-rose-700', border: 'border-rose-300/50', glow: 'shadow-[0_0_30px_rgba(251,113,133,0.4)]', swirl: 'text-rose-300', hpBar: 'bg-rose-500', hpBg: 'bg-rose-950', bubble: 'bg-rose-200' };
+     ? { 
+         main: 'bg-sky-400', 
+         gradient: 'from-sky-300 via-sky-400 to-sky-600', 
+         border: 'border-sky-200', 
+         face: 'text-slate-900',
+         blush: 'bg-rose-400/40',
+         crown: 'text-amber-300'
+       } 
+     : { 
+         main: 'bg-rose-500', 
+         gradient: 'from-rose-400 via-rose-500 to-rose-700', 
+         border: 'border-rose-200', 
+         face: 'text-slate-900',
+         blush: 'bg-rose-300/40',
+         crown: 'text-slate-300'
+       };
 
    return (
-      <div className="flex flex-col items-center w-[8vw] relative">
+      <div className="relative flex flex-col items-center justify-end w-[10vw] h-[12vw] pointer-events-none">
          <style>{`
-            @keyframes soft-bounce { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02, 0.98); } }
-            @keyframes breathe { 0%, 100% { transform: scale(1); opacity: 0.95; } 50% { transform: scale(1.03); opacity: 1; } }
-            @keyframes liquid-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-            @keyframes gentle-bubble { 0% { transform: translateY(20px) scale(0.5); opacity: 0; } 50% { opacity: 0.6; } 100% { transform: translateY(-20px) scale(1); opacity: 0; } }
-            @keyframes hit-wobble { 0% { transform: scale(1) rotate(0deg); } 20% { transform: scale(1.2) rotate(-5deg); } 40% { transform: scale(1.1) rotate(5deg); } 60% { transform: scale(1.05) rotate(-3deg); } 80% { transform: scale(1.02) rotate(2deg); } 100% { transform: scale(1) rotate(0deg); } }
-            .animate-hit-wobble { animation: hit-wobble 0.4s ease-out; }
+            @keyframes tower-idle { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02, 0.98); } }
+            @keyframes tower-hit { 
+              0% { transform: scale(1) translate(0, 0); } 
+              25% { transform: scale(1.1, 0.9) translate(-2px, 2px); } 
+              50% { transform: scale(0.9, 1.1) translate(2px, -2px); } 
+              75% { transform: scale(1.05, 0.95) translate(-1px, 1px); } 
+              100% { transform: scale(1) translate(0, 0); } 
+            }
+            @keyframes crown-float { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-5px) rotate(3deg); } }
          `}</style>
-         <div className={`relative z-30 mb-[1vw] w-[120%] h-[1.6vw] bg-slate-900/80 backdrop-blur-md rounded-[0.8vw] border-[0.2vw] ${theme.border} shadow-lg overflow-hidden transition-all duration-200`} style={{ animation: isHit ? 'hit-wobble 0.4s ease-out' : 'breathe 5s ease-in-out infinite' }}>
-             <div className={`absolute inset-0 opacity-40 ${theme.hpBg}`}></div>
-             <div className={`h-full ${theme.hpBar} relative transition-all duration-500 ease-out flex items-center`} style={{ width: `${Math.max(0, (hp/maxHp)*100)}%` }}>
-                <div className="absolute top-0 inset-x-0 h-[40%] bg-white/40 blur-[1px] rounded-b-full opacity-80"></div>
-                <div className="absolute right-0 top-0 bottom-0 w-[2px] bg-white/60 blur-[1px] shadow-[0_0_5px_white]"></div>
-             </div>
-             <div className="absolute top-[15%] left-[5%] w-[90%] h-[20%] bg-gradient-to-b from-white/30 to-transparent rounded-full blur-[0.5px] pointer-events-none"></div>
-         </div>
-         <div className={`w-full h-[16vw] rounded-t-[45%] rounded-b-[25%] bg-gradient-to-b ${theme.gradient} border-[0.25vw] ${theme.border} ${theme.glow} flex items-end justify-center pb-[2.5vw] relative overflow-hidden`} style={{ animation: 'soft-bounce 6s ease-in-out infinite' }}>
-            <div className="absolute top-[8%] left-[20%] w-[30%] h-[15%] bg-white/40 rounded-full blur-[2px] rotate-[-15deg]"></div>
-            <div className={`relative w-[6vw] h-[7vw] rounded-full bg-slate-950/40 border-[0.15vw] ${isPlayer ? 'border-emerald-200/20' : 'border-rose-200/20'} overflow-hidden shadow-[inset_0_0_20px_rgba(0,0,0,0.6)] flex items-center justify-center backdrop-blur-sm`}>
-               <div className={`absolute w-[200%] h-[200%] opacity-30 ${theme.swirl} mix-blend-overlay`} style={{ background: 'conic-gradient(from 0deg, transparent 0%, currentColor 40%, transparent 80%)', animation: 'liquid-spin 20s linear infinite' }} />
-               <div className={`absolute w-[180%] h-[180%] opacity-20 ${theme.swirl}`} style={{ background: 'conic-gradient(from 180deg, transparent 0%, currentColor 30%, transparent 60%)', animation: 'liquid-spin 15s linear infinite reverse' }} />
-               <div className={`absolute bottom-2 left-[40%] w-[0.4vw] h-[0.4vw] rounded-full ${theme.bubble} blur-[0.5px]`} style={{ animation: 'gentle-bubble 4s ease-in-out infinite' }}></div>
-               <div className="relative w-[55%] h-[55%] bg-slate-900/80 rounded-full shadow-[inset_0_0_15px_rgba(0,0,0,0.8)] flex items-center justify-center">
-                  <div className={`w-[40%] h-[40%] rounded-full ${theme.hpBar} blur-md opacity-70 animate-pulse`} style={{ animationDuration: '4s' }}></div>
-               </div>
+         
+         {/* HP Bar - Floating above */}
+         <div className="absolute -top-[20%] w-[120%] flex flex-col items-center z-20">
+            <div className="w-full h-[0.8vw] bg-black/50 backdrop-blur-sm rounded-full border border-white/20 p-[1px] shadow-sm">
+                <div className={`h-full rounded-full transition-all duration-200 ease-out ${isPlayer ? 'bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.8)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.8)]'}`} 
+                     style={{ width: `${Math.max(0, (hp/maxHp)*100)}%` }}></div>
             </div>
-            <div className="absolute bottom-0 w-full h-[10%] bg-gradient-to-t from-black/20 to-transparent"></div>
+            <span className="text-[0.8vw] font-black text-white drop-shadow-md mt-[0.2vw]">{Math.ceil(hp)}/{maxHp}</span>
+         </div>
+
+         {/* The Slime Tower Body */}
+         <div className={`relative w-full h-full ${isHit ? 'animate-[tower-hit_0.4s_ease-out]' : 'animate-[tower-idle_3s_ease-in-out_infinite]'}`}>
+            
+            {/* Crown */}
+            <div className={`absolute -top-[30%] left-1/2 -translate-x-1/2 text-[4vw] drop-shadow-xl z-10 ${theme.crown}`} style={{ animation: 'crown-float 4s ease-in-out infinite' }}>
+               {isPlayer ? '👑' : '🏰'}
+            </div>
+
+            {/* Slime Body Shape */}
+            <div className={`w-full h-full rounded-t-[45%] rounded-b-[20%] bg-gradient-to-b ${theme.gradient} border-[0.3vw] ${theme.border} shadow-2xl relative overflow-hidden flex flex-col items-center pt-[20%]`}>
+               
+               {/* Glossy Reflection */}
+               <div className="absolute top-[10%] left-[10%] w-[30%] h-[15%] bg-white/50 rounded-full rotate-[-20deg] blur-[1px]"></div>
+               <div className="absolute top-[15%] right-[20%] w-[10%] h-[5%] bg-white/30 rounded-full blur-[1px]"></div>
+
+               {/* Face Container */}
+               <div className="relative z-10 flex flex-col items-center">
+                  {/* Eyes */}
+                  <div className="flex space-x-[1.5vw]">
+                     {/* Left Eye */}
+                     <div className="w-[2vw] h-[2vw] bg-slate-900 rounded-full relative overflow-hidden">
+                        <div className="absolute top-[15%] right-[15%] w-[0.8vw] h-[0.8vw] bg-white rounded-full"></div>
+                        {isHit && <div className="absolute inset-0 bg-red-500/50 animate-pulse"></div>}
+                     </div>
+                     {/* Right Eye */}
+                     <div className="w-[2vw] h-[2vw] bg-slate-900 rounded-full relative overflow-hidden">
+                        <div className="absolute top-[15%] right-[15%] w-[0.8vw] h-[0.8vw] bg-white rounded-full"></div>
+                        {isHit && <div className="absolute inset-0 bg-red-500/50 animate-pulse"></div>}
+                     </div>
+                  </div>
+
+                  {/* Cheeks */}
+                  <div className="w-full flex justify-between px-[-1vw] mt-[0.2vw]">
+                     <div className={`w-[1.2vw] h-[0.6vw] ${theme.blush} rounded-full blur-[1px]`}></div>
+                     <div className={`w-[1.2vw] h-[0.6vw] ${theme.blush} rounded-full blur-[1px]`}></div>
+                  </div>
+
+                  {/* Mouth */}
+                  <div className={`mt-[0.2vw] w-[1vw] h-[0.5vw] bg-slate-900/80 rounded-b-full transition-all duration-200 ${isHit ? 'h-[1.2vw] w-[1.2vw] rounded-full bg-slate-900' : ''}`}></div>
+               </div>
+
+               {/* Bubbles inside */}
+               <div className="absolute bottom-2 left-4 w-[1vw] h-[1vw] bg-white/20 rounded-full animate-bounce" style={{ animationDuration: '3s' }}></div>
+               <div className="absolute bottom-6 right-3 w-[0.5vw] h-[0.5vw] bg-white/20 rounded-full animate-bounce" style={{ animationDuration: '2s', animationDelay: '0.5s' }}></div>
+            </div>
+
+            {/* Puddle at base */}
+            <div className={`absolute -bottom-[5%] left-[5%] right-[5%] h-[15%] ${theme.main} opacity-50 rounded-[50%] blur-sm -z-10`}></div>
          </div>
       </div>
    );
