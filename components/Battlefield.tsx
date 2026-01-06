@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { PlayerStats, SlimeUnit, SlimeType, Projectile } from '../types';
 import { SLIME_CONFIGS, getThemeForLevel } from '../constants';
-import { Sword, Undo2, Users, BrainCircuit } from 'lucide-react';
+import { Sword, Undo2, Users } from 'lucide-react';
 import { getBattleStrategy } from '../services/geminiService';
 
 interface BattlefieldProps {
@@ -336,21 +336,69 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
           ))}
         </div>
 
-        {/* Start Overlay with AI Tip */}
+        {/* Loading Screen Overlay with Dancing Slime */}
         {isStarting && (
-          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm transition-opacity duration-1000">
-             <div className="bg-slate-900/90 p-8 rounded-[40px] border border-white/10 shadow-2xl flex flex-col items-center max-w-xl animate-float">
-                <div className="p-4 bg-indigo-500/20 rounded-full mb-4">
-                   <BrainCircuit size={48} className="text-indigo-400 animate-pulse" />
+          <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-xl transition-opacity duration-500">
+             <style>{`
+                @keyframes dance-bounce {
+                    0%, 100% { transform: translateY(0) scale(1); }
+                    50% { transform: translateY(-15px) scale(1.05, 0.95); }
+                }
+                @keyframes tongue-wag {
+                    0% { transform: translateX(-50%) rotate(-5deg); }
+                    100% { transform: translateX(-50%) rotate(5deg); }
+                }
+                @keyframes loading-bar {
+                    0% { width: 0%; transform: translateX(-100%); }
+                    50% { width: 100%; transform: translateX(0%); }
+                    100% { width: 0%; transform: translateX(200%); }
+                }
+             `}</style>
+
+             {/* The Dancing Slime */}
+             <div className="relative mb-8" style={{ animation: 'dance-bounce 0.6s infinite cubic-bezier(0.25, 1, 0.5, 1)' }}>
+                {/* Body */}
+                <div className="w-32 h-28 bg-emerald-400 rounded-t-[50%] rounded-b-[20%] shadow-[0_0_50px_rgba(52,211,153,0.4)] border-4 border-emerald-300 relative overflow-visible">
+                    {/* Highlight */}
+                    <div className="absolute top-5 left-6 w-10 h-5 bg-white/40 rounded-full rotate-[-15deg]"></div>
+                    
+                    {/* Eyes (Happy Curves) */}
+                    <div className="absolute top-10 left-7 w-5 h-3 border-t-[3px] border-slate-900 rounded-full"></div>
+                    <div className="absolute top-10 right-7 w-5 h-3 border-t-[3px] border-slate-900 rounded-full"></div>
+
+                    {/* Cheeks */}
+                    <div className="absolute top-12 left-4 w-4 h-2 bg-rose-400/50 rounded-full blur-[2px]"></div>
+                    <div className="absolute top-12 right-4 w-4 h-2 bg-rose-400/50 rounded-full blur-[2px]"></div>
+
+                    {/* Mouth Open */}
+                    <div className="absolute bottom-7 left-1/2 -translate-x-1/2 w-8 h-5 bg-slate-900 rounded-b-full overflow-hidden"></div>
+                    
+                    {/* Tongue Hanging Out */}
+                    <div className="absolute bottom-4 left-1/2 w-4 h-5 bg-rose-500 rounded-b-full border-t border-rose-700/20 shadow-sm"
+                         style={{ animation: 'tongue-wag 0.2s infinite alternate' }}></div>
                 </div>
-                <h3 className="header-font text-2xl font-black text-white italic tracking-tighter mb-2 uppercase">AI STRATEGY BRIEFING</h3>
-                <p className="text-indigo-200/70 text-center font-medium leading-relaxed italic">
-                   {aiTip || "Analyzing battlefield conditions... Prepare for deployment."}
+             </div>
+
+             {/* Loading Text */}
+             <div className="text-center mb-6">
+                <h3 className="header-font text-3xl font-black text-white italic tracking-widest animate-pulse">
+                    INITIALIZING...
+                </h3>
+             </div>
+
+             {/* Tip Card */}
+             <div className="max-w-md px-6 py-4 bg-white/5 border border-white/10 rounded-xl relative mx-4 animate-float">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-900 px-3 py-1 border border-white/10 rounded-full">
+                    <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Tactical Tip</span>
+                </div>
+                <p className="text-center text-slate-300 font-medium italic text-sm md:text-base leading-relaxed mt-2">
+                   "{aiTip || "Scouting enemy defenses..."}"
                 </p>
-                <div className="mt-6 flex space-x-2">
-                   <div className="w-16 h-1 bg-indigo-500 rounded-full animate-pulse"></div>
-                   <div className="w-4 h-1 bg-indigo-500/30 rounded-full"></div>
-                </div>
+             </div>
+
+             {/* Progress Bar */}
+             <div className="mt-8 w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full animate-[loading-bar_1.5s_ease-in-out_infinite]"></div>
              </div>
           </div>
         )}
