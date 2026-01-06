@@ -16,7 +16,7 @@ const LAYOUT = {
   ASPECT_RATIO: '16/9',
   TOWER_LEFT: 10,   // Player Base %
   TOWER_RIGHT: 90,  // Enemy Base %
-  GROUND_LEVEL: 15, // % from bottom
+  LANE_BOTTOM: 22,  // Ground Line % (Raised to clear bottom UI)
 };
 
 const GRAVITY = 0.02;
@@ -307,16 +307,19 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
            {/* Sky */}
            <div className={`absolute inset-0 bg-gradient-to-b ${theme.bgColor}`}></div>
            
-           {/* Mountains */}
+           {/* Mountains - STRICTLY MIRRORED */}
            <div className="absolute bottom-[20%] left-0 right-0 h-[30%] opacity-30">
-              <div className="absolute bottom-0 left-[10%] w-0 h-0 border-l-[4vw] border-r-[4vw] border-b-[10vw] border-l-transparent border-r-transparent border-b-slate-800"></div>
-              <div className="absolute bottom-0 left-[40%] w-0 h-0 border-l-[8vw] border-r-[8vw] border-b-[16vw] border-l-transparent border-r-transparent border-b-slate-900"></div>
-              <div className="absolute bottom-0 right-[15%] w-0 h-0 border-l-[6vw] border-r-[6vw] border-b-[12vw] border-l-transparent border-r-transparent border-b-slate-800"></div>
+              {/* Center Peak */}
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12vw] border-r-[12vw] border-b-[20vw] border-l-transparent border-r-transparent border-b-slate-900"></div>
+              {/* Left Peak */}
+              <div className="absolute bottom-0 left-[15%] w-0 h-0 border-l-[8vw] border-r-[8vw] border-b-[14vw] border-l-transparent border-r-transparent border-b-slate-800"></div>
+              {/* Right Peak (Mirrored) */}
+              <div className="absolute bottom-0 right-[15%] w-0 h-0 border-l-[8vw] border-r-[8vw] border-b-[14vw] border-l-transparent border-r-transparent border-b-slate-800"></div>
            </div>
 
-           {/* Ground - Fixed Height relative to container */}
+           {/* Ground - Adjusted to new lane height */}
            <div className="absolute left-0 right-0 bg-emerald-800 border-t-4 border-emerald-950 shadow-2xl" 
-                style={{ bottom: 0, height: `${LAYOUT.GROUND_LEVEL}%` }}></div>
+                style={{ bottom: 0, height: `${LAYOUT.LANE_BOTTOM}%` }}></div>
         </div>
 
         {/* ====================
@@ -327,23 +330,23 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
           {/* --- TOWERS --- */}
           {/* Player Tower (LEFT 10%) */}
           <div className="absolute transition-transform duration-100" 
-               style={{ left: `${LAYOUT.TOWER_LEFT}%`, bottom: `${LAYOUT.GROUND_LEVEL}%`, transform: 'translateX(-50%)' }}>
+               style={{ left: `${LAYOUT.TOWER_LEFT}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
              <TowerVisual team="player" hp={playerHP} maxHp={2000} />
           </div>
 
           {/* Enemy Tower (RIGHT 90%) */}
           <div className="absolute transition-transform duration-100" 
-               style={{ left: `${LAYOUT.TOWER_RIGHT}%`, bottom: `${LAYOUT.GROUND_LEVEL}%`, transform: 'translateX(-50%)' }}>
+               style={{ left: `${LAYOUT.TOWER_RIGHT}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
              <TowerVisual team="enemy" hp={enemyHP} maxHp={2000 + level*200} />
           </div>
 
           {/* --- MINING ROCKS --- */}
           {/* Player Rock (Left + 10) */}
-          <div className="absolute" style={{ left: `${LAYOUT.TOWER_LEFT + 10}%`, bottom: `${LAYOUT.GROUND_LEVEL}%`, transform: 'translateX(-50%)' }}>
+          <div className="absolute" style={{ left: `${LAYOUT.TOWER_LEFT + 10}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
             <div className="text-[3vw] animate-bounce">💎</div>
           </div>
           {/* Enemy Rock (Right - 10) */}
-          <div className="absolute" style={{ left: `${LAYOUT.TOWER_RIGHT - 10}%`, bottom: `${LAYOUT.GROUND_LEVEL}%`, transform: 'translateX(-50%)' }}>
+          <div className="absolute" style={{ left: `${LAYOUT.TOWER_RIGHT - 10}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
             <div className="text-[3vw] animate-bounce">💎</div>
           </div>
 
@@ -354,7 +357,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
               className="absolute transition-all duration-100 ease-linear"
               style={{ 
                 left: `${u.position}%`, 
-                bottom: `${LAYOUT.GROUND_LEVEL}%`, 
+                bottom: `${LAYOUT.LANE_BOTTOM}%`, 
                 transform: 'translateX(-50%)' 
               }}
             >
@@ -364,8 +367,8 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
                   Enemy (Right) -> Flipped Scale (Face Left)
                */}
                <div className={`flex flex-col items-center justify-end ${u.team === 'player' ? '' : 'scale-x-[-1]'}`}>
-                  {/* HP Bar */}
-                  <div className="w-[4vw] h-[0.5vw] bg-black/50 rounded-full mb-[0.2vw] overflow-hidden">
+                  {/* HP Bar - Counter-flip for enemy to keep LTR visual */}
+                  <div className={`w-[4vw] h-[0.5vw] bg-black/50 rounded-full mb-[0.2vw] overflow-hidden ${u.team === 'enemy' ? 'scale-x-[-1]' : ''}`}>
                      <div className={`h-full ${u.team === 'player' ? 'bg-sky-400' : 'bg-rose-500'}`} style={{ width: `${(u.health/u.maxHealth)*100}%` }}></div>
                   </div>
                   {/* Unit Sprite */}
@@ -392,7 +395,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
                className="absolute w-[0.8vw] h-[0.8vw] bg-white rounded-full shadow-[0_0_8px_white]"
                style={{ 
                   left: `${p.x}%`, 
-                  bottom: `${LAYOUT.GROUND_LEVEL + p.y}%` // % based Y offset 
+                  bottom: `${LAYOUT.LANE_BOTTOM + p.y}%` // % based Y offset 
                }}
              />
           ))}
@@ -401,21 +404,21 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
 
         {/* ====================
             LAYER 2: UI OVERLAY
-            (Strictly Padded from Edges)
+            (Strictly Padded from Edges, No Lane Overlap)
            ==================== */}
-        <div className="absolute inset-0 z-50 pointer-events-none flex flex-col justify-between p-6">
+        <div className="absolute inset-0 z-50 pointer-events-none flex flex-col justify-between">
            
-           {/* TOP HUD BAR */}
-           <div className="w-full flex justify-between items-start">
+           {/* TOP HUD ZONE (0% - 15% Height) - REDUCED HEIGHT & PADDING */}
+           <div className="w-full h-[15%] px-6 pt-2 flex justify-between items-start pointer-events-auto">
               
               {/* Left: Player Badge */}
-              <div className="pointer-events-auto bg-slate-900/80 backdrop-blur rounded-full px-4 py-2 border border-white/10 flex items-center space-x-3 shadow-lg">
+              <div className="bg-slate-900/80 backdrop-blur rounded-full px-4 py-2 border border-white/10 flex items-center space-x-3 shadow-lg scale-90 origin-top-left">
                  <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-xs font-bold text-white border border-white/20">PI</div>
                  <span className="text-xs font-bold text-white tracking-widest">CMDR</span>
               </div>
 
-              {/* Center: Unit Spawner */}
-              <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-xl rounded-2xl p-1.5 border border-white/10 flex space-x-1 shadow-2xl">
+              {/* Center: Unit Spawner - REDUCED SIZE */}
+              <div className="bg-slate-900/90 backdrop-blur-xl rounded-xl p-1 border border-white/10 flex space-x-1 shadow-2xl">
                  {(['miner', 'warrior', 'tank', 'archer', 'mage', 'big_slime'] as any[]).map(type => {
                     const cfg = SLIME_CONFIGS[type as SlimeType] || SLIME_CONFIGS.big_slime;
                     const cd = cooldowns[type] || 0;
@@ -426,18 +429,18 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
                           onClick={() => requestSpawn(type, 'player')}
                           disabled={!canAfford || cd > 0}
                           className={`
-                             relative w-[5vw] h-[6vw] max-w-[60px] max-h-[72px] rounded-xl flex flex-col items-center justify-center
+                             relative w-[4vw] h-[4.5vw] max-w-[48px] max-h-[54px] rounded-lg flex flex-col items-center justify-center
                              transition-all active:scale-95 border
                              ${canAfford ? 'bg-slate-800 hover:bg-slate-700 border-white/10' : 'bg-slate-900 opacity-60 grayscale border-transparent'}
                           `}
                        >
-                          <span className="text-[2vw] max-text-[24px] drop-shadow-md">{cfg.icon}</span>
-                          <div className="absolute bottom-0 w-full bg-black/50 text-[1vw] max-text-[10px] text-center text-white font-bold py-[2px] rounded-b-xl leading-none">
+                          <span className="text-[1.5vw] max-text-[20px] drop-shadow-md mb-[2px]">{cfg.icon}</span>
+                          <div className="absolute bottom-0 w-full bg-black/50 text-[0.8vw] max-text-[9px] text-center text-white font-bold py-[1px] rounded-b-lg leading-none">
                              {cfg.cost}
                           </div>
                           {cd > 0 && (
-                             <div className="absolute inset-0 bg-black/70 rounded-xl flex items-center justify-center">
-                                <span className="text-[1.5vw] font-bold text-white">{(cd/1000).toFixed(0)}</span>
+                             <div className="absolute inset-0 bg-black/70 rounded-lg flex items-center justify-center">
+                                <span className="text-[1.2vw] font-bold text-white">{(cd/1000).toFixed(0)}</span>
                              </div>
                           )}
                        </button>
@@ -446,7 +449,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
               </div>
 
               {/* Right: Resources */}
-              <div className="pointer-events-auto bg-slate-900/80 backdrop-blur rounded-full px-4 py-2 border border-white/10 flex items-center space-x-4 shadow-lg">
+              <div className="bg-slate-900/80 backdrop-blur rounded-full px-4 py-2 border border-white/10 flex items-center space-x-4 shadow-lg scale-90 origin-top-right">
                  <span className="text-sm font-black text-amber-400 header-font">🪨 {playerGold}</span>
                  <div className="w-px h-4 bg-white/20"></div>
                  <div className="flex items-center space-x-1.5">
@@ -456,20 +459,25 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
               </div>
            </div>
 
-           {/* BOTTOM RIGHT ACTIONS */}
-           <div className="pointer-events-auto self-end flex flex-col gap-3 mt-auto">
-              <button
-                 onClick={() => setIsRetreating(false)}
-                 className={`w-[5vw] h-[5vw] max-w-[64px] max-h-[64px] rounded-full flex items-center justify-center shadow-lg border-2 border-white/20 transition-all active:scale-90 ${!isRetreating ? 'bg-rose-500 scale-110 border-white' : 'bg-slate-800 text-white/50'}`}
-              >
-                 <Sword className="w-[2.5vw] h-[2.5vw] max-w-[32px] max-h-[32px] text-white" />
-              </button>
-              <button
-                 onClick={() => setIsRetreating(true)}
-                 className={`w-[5vw] h-[5vw] max-w-[64px] max-h-[64px] rounded-full flex items-center justify-center shadow-lg border-2 border-white/20 transition-all active:scale-90 ${isRetreating ? 'bg-emerald-500 scale-110 border-white' : 'bg-slate-800 text-white/50'}`}
-              >
-                 <Undo2 className="w-[2.5vw] h-[2.5vw] max-w-[32px] max-h-[32px] text-white" />
-              </button>
+           {/* MIDDLE SPACER (Allows Lane Visibility) */}
+           <div className="flex-1 pointer-events-none"></div>
+
+           {/* BOTTOM CONTROLS ZONE (Strictly confined to bottom 18%) */}
+           <div className="w-full h-[18%] px-6 pb-2 flex justify-end items-end pointer-events-auto">
+              <div className="flex flex-col gap-2 bg-slate-900/80 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-xl">
+                <button
+                   onClick={() => setIsRetreating(false)}
+                   className={`w-[4vw] h-[4vw] max-w-[48px] max-h-[48px] rounded-xl flex items-center justify-center shadow-lg border-2 border-white/20 transition-all active:scale-90 ${!isRetreating ? 'bg-rose-500 border-white' : 'bg-slate-800 text-white/50'}`}
+                >
+                   <Sword className="w-[2vw] h-[2vw] max-w-[24px] max-h-[24px] text-white" />
+                </button>
+                <button
+                   onClick={() => setIsRetreating(true)}
+                   className={`w-[4vw] h-[4vw] max-w-[48px] max-h-[48px] rounded-xl flex items-center justify-center shadow-lg border-2 border-white/20 transition-all active:scale-90 ${isRetreating ? 'bg-emerald-500 border-white' : 'bg-slate-800 text-white/50'}`}
+                >
+                   <Undo2 className="w-[2vw] h-[2vw] max-w-[24px] max-h-[24px] text-white" />
+                </button>
+              </div>
            </div>
 
         </div>
