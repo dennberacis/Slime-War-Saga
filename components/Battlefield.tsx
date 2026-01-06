@@ -13,8 +13,10 @@ interface BattlefieldProps {
 
 const LAYOUT = {
   ASPECT_RATIO: '16/9',
+  WORLD_WIDTH: 400, // The world is 4x wider than the viewport (0 to 400)
+  VIEWPORT_WIDTH: 100, // Viewport shows 100 units of world width
   TOWER_LEFT: 10,
-  TOWER_RIGHT: 90,
+  TOWER_RIGHT: 390,
   LANE_BOTTOM: 22,
 };
 
@@ -47,6 +49,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
   const [aiTip, setAiTip] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(true);
   const [floatingTexts, setFloatingTexts] = useState<{id: string, x: number, y: number, text: string}[]>([]);
+  const [cameraX, setCameraX] = useState(0); // Tracks current viewport offset in world units
   
   const [units, setUnits] = useState<ExtendedSlimeUnit[]>([]);
   const [projectiles, setProjectiles] = useState<Projectile[]>([]);
@@ -65,12 +68,13 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     gameResult,
     isStarting,
     spawnQueue,
-    playerTowerLevel
+    playerTowerLevel,
+    cameraX
   });
 
   useEffect(() => {
-    gameStateRef.current = { units, enemyGold, playerGold, gameResult, isStarting, spawnQueue, playerTowerLevel };
-  }, [units, enemyGold, playerGold, gameResult, isStarting, spawnQueue, playerTowerLevel]);
+    gameStateRef.current = { units, enemyGold, playerGold, gameResult, isStarting, spawnQueue, playerTowerLevel, cameraX };
+  }, [units, enemyGold, playerGold, gameResult, isStarting, spawnQueue, playerTowerLevel, cameraX]);
 
   useEffect(() => {
     let mounted = true;
@@ -171,7 +175,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
       if (enemyPop >= MAX_POP) return;
 
       const enemyMiners = enemyUnits.filter(u => u.type === 'miner').length;
-      const dangerClose = playerUnits.some(u => u.position > 60);
+      const dangerClose = playerUnits.some(u => u.position > (LAYOUT.TOWER_RIGHT - 100));
       
       const spawnEnemy = (type: SlimeType | 'big_slime') => {
         const config = SLIME_CONFIGS[type as SlimeType] || SLIME_CONFIGS.big_slime;
@@ -184,7 +188,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
       if (dangerClose) {
          if (enemyGold >= SLIME_CONFIGS.tank.cost && Math.random() > 0.4) spawnEnemy('tank');
          else if (enemyGold >= SLIME_CONFIGS.warrior.cost) spawnEnemy('warrior');
-      } else if (enemyMiners < 2 && enemyGold >= SLIME_CONFIGS.miner.cost && Math.random() > 0.3) {
+      } else if (enemyMiners < 3 && enemyGold >= SLIME_CONFIGS.miner.cost && Math.random() > 0.3) {
          spawnEnemy('miner');
       } else if (enemyGold > 100) {
          const roll = Math.random();
@@ -206,6 +210,19 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
       const next = prev.map(u => ({ ...u }));
       const toRemove = new Set<string>();
       const newSummons: ExtendedSlimeUnit[] = [];
+
+      // Determine Action Focus for Camera
+      const playerUnits = next.filter(u => u.team === 'player');
+      let targetCameraX = 0;
+      if (playerUnits.length > 0) {
+        const leadX = Math.max(...playerUnits.map(u => u.position));
+        targetCameraX = leadX - 50; 
+      } else {
+        targetCameraX = LAYOUT.TOWER_LEFT - 10;
+      }
+      
+      const clampedTargetX = Math.max(0, Math.min(LAYOUT.WORLD_WIDTH - LAYOUT.VIEWPORT_WIDTH, targetCameraX));
+      setCameraX(prevX => prevX + (clampedTargetX - prevX) * 0.05);
 
       next.forEach(u => {
         if (u.type === 'mage' && !u.isDead && (time - (u.lastSummonTime || 0) > 10000)) {
@@ -230,7 +247,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
 
         const myTower = u.team === 'player' ? LAYOUT.TOWER_LEFT : LAYOUT.TOWER_RIGHT;
         const enTower = u.team === 'player' ? LAYOUT.TOWER_RIGHT : LAYOUT.TOWER_LEFT;
-        const rockPos = u.team === 'player' ? LAYOUT.TOWER_LEFT + 15 : LAYOUT.TOWER_RIGHT - 15;
+        const rockPos = u.team === 'player' ? LAYOUT.TOWER_LEFT + 25 : LAYOUT.TOWER_RIGHT - 25;
         const isRetreat = (u.team === 'player' && isRetreating) || u.isRetreating;
 
         if (isRetreat) {
@@ -283,7 +300,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
         const boundaryE = LAYOUT.TOWER_RIGHT - 2;
         const enemies = next.filter(e => e.team !== u.team && !e.isDead && (e.team === 'player' ? e.position <= boundaryE : e.position >= boundaryP));
         let target: ExtendedSlimeUnit | null = null;
-        let minDist = 100;
+        let minDist = 1000;
         enemies.forEach(e => {
           const d = Math.abs(u.position - e.position);
           if (d < minDist) { minDist = d; target = e; }
@@ -296,7 +313,8 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
            if (time - u.lastAttackTime > 1200) {
               if (u.type === 'archer' || (u.type === 'mage' && !u.isMini)) {
                  const tX = target ? target.position : enTower;
-                 const travelTime = 60;
+                 const travelDistance = Math.abs(tX - u.position);
+                 const travelTime = travelDistance * 2 + 10;
                  const vx = (tX - u.position) / travelTime;
                  const vy = 0.5 * GRAVITY * travelTime;
                  projectilesRef.current.push({
@@ -359,7 +377,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
               return uPrev;
             });
           }
-          if (!hit && p.y > -5 && p.x > 0 && p.x < 100) next.push(p);
+          if (!hit && p.y > -10 && p.x > 0 && p.x < LAYOUT.WORLD_WIDTH) next.push(p);
         });
         return next;
     });
@@ -389,70 +407,77 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     <div className="w-full h-full bg-black flex items-center justify-center overflow-hidden">
       <div className="relative w-full h-auto aspect-video max-h-screen bg-slate-900 overflow-hidden shadow-2xl border-y-2 border-slate-800">
         
-        {/* Background Layers */}
+        {/* Parallax Background Layers */}
         <div className="absolute inset-0 z-0 bg-[#0f172a]">
            <div className="absolute inset-0 bg-gradient-to-b from-[#1e1b4b] via-[#312e81] to-[#701a75]"></div>
            <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '60px 60px' }}></div>
-           <div className="absolute bottom-[21%] left-0 right-0 h-[45%] text-indigo-300/20 pointer-events-none">
-              <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 1200 300">
-                 <path d="M0,200 C300,100 600,250 1200,120 L1200,300 L0,300 Z" fill="currentColor"/>
+           
+           <div className="absolute bottom-[21%] left-0 h-[45%] w-[800%] text-indigo-300/10 pointer-events-none transition-transform duration-100 ease-linear"
+                style={{ transform: `translateX(${-cameraX * 0.2}%)` }}>
+              <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 4800 300">
+                 <path d="M0,200 C600,100 1200,250 2400,120 C3600,250 4200,100 4800,200 L4800,300 L0,300 Z" fill="currentColor"/>
               </svg>
            </div>
-           <div className="absolute bottom-[21%] left-0 right-0 h-[25%] text-slate-900 pointer-events-none">
-              <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 1200 200">
-                 <path d="M0,180 C150,150 300,190 600,160 C900,130 1050,170 1200,150 L1200,200 L0,200 Z" fill="currentColor"/>
+           
+           <div className="absolute bottom-[21%] left-0 h-[25%] w-[600%] text-slate-900 pointer-events-none transition-transform duration-100 ease-linear"
+                style={{ transform: `translateX(${-cameraX * 0.5}%)` }}>
+              <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 3600 200">
+                 <path d="M0,180 C450,150 900,190 1800,160 C2700,130 3150,170 3600,180 L3600,200 L0,200 Z" fill="currentColor"/>
               </svg>
            </div>
-           <div className="absolute left-0 right-0 shadow-[0_-5px_30px_rgba(0,0,0,0.6)] z-10" style={{ bottom: 0, height: `${LAYOUT.LANE_BOTTOM}%` }}>
+        </div>
+
+        {/* Scrolling World Container */}
+        <div className="absolute inset-0 z-10 pointer-events-none transition-transform duration-100 ease-linear"
+             style={{ transform: `translateX(${-cameraX}%)`, width: `${LAYOUT.WORLD_WIDTH}%` }}>
+           
+           <div className="absolute left-0 right-0 shadow-[0_-5px_30px_rgba(0,0,0,0.6)] z-0" style={{ bottom: 0, height: `${LAYOUT.LANE_BOTTOM}%` }}>
                 <div className="w-full h-full bg-gradient-to-b from-[#1e293b] to-[#020617] border-t border-white/5 relative overflow-hidden">
                    <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
                 </div>
            </div>
-        </div>
 
-        {/* Gameplay Area */}
-        <div className="absolute inset-0 z-10 pointer-events-none">
-          <ResourceCrystal x={LAYOUT.TOWER_LEFT + 15} active={isPlayerMining} />
-          <ResourceCrystal x={LAYOUT.TOWER_RIGHT - 15} active={isEnemyMining} />
+           <ResourceCrystal x={LAYOUT.TOWER_LEFT + 25} active={isPlayerMining} />
+           <ResourceCrystal x={LAYOUT.TOWER_RIGHT - 25} active={isEnemyMining} />
 
-          <div className="absolute" style={{ left: `${LAYOUT.TOWER_LEFT}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
-             <TowerVisual team="player" hp={playerHP} maxHp={playerMaxHP} towerLevel={playerTowerLevel} />
-          </div>
-          <div className="absolute" style={{ left: `${LAYOUT.TOWER_RIGHT}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
-             <TowerVisual team="enemy" hp={enemyHP} maxHp={2000 + level*200} towerLevel={1 + Math.floor(level/10)} />
-          </div>
+           <div className="absolute" style={{ left: `${LAYOUT.TOWER_LEFT}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
+              <TowerVisual team="player" hp={playerHP} maxHp={playerMaxHP} towerLevel={playerTowerLevel} />
+           </div>
+           <div className="absolute" style={{ left: `${LAYOUT.TOWER_RIGHT}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
+              <TowerVisual team="enemy" hp={enemyHP} maxHp={2000 + level*200} towerLevel={1 + Math.floor(level/10)} />
+           </div>
 
-          {units.map(u => (
-            <div key={u.id} className="absolute transition-all duration-100 ease-linear" style={{ left: `${u.position}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
-               <div className={`flex flex-col items-center justify-end ${u.team === 'player' ? '' : 'scale-x-[-1]'}`}>
-                  <div className={`w-[4vw] h-[0.5vw] bg-black/50 rounded-full mb-[0.5vw] overflow-hidden ${u.team === 'enemy' ? 'scale-x-[-1]' : ''} ${u.isBigSlime ? 'w-[7vw] mb-[1vw]' : ''} ${u.isMini ? 'w-[2.5vw]' : ''}`}>
-                     <div className={`h-full ${u.team === 'player' ? 'bg-sky-400' : 'bg-rose-500'}`} style={{ width: `${(u.health/u.maxHealth)*100}%` }}></div>
-                  </div>
-                  <UnitRenderer unit={u} towerLevel={u.team === 'player' ? playerTowerLevel : 1} />
-               </div>
-            </div>
-          ))}
-
-          {projectiles.map(p => (
-             <div key={p.id} className="absolute" style={{ left: `${p.x}%`, bottom: `${LAYOUT.LANE_BOTTOM + p.y}%` }}>
-                {p.type === 'arrow' ? (
-                   <div className={`w-[1.5vw] h-[0.3vw] bg-white rounded-full shadow-sm origin-center ${p.vx > 0 ? 'rotate-[-10deg]' : 'rotate-[10deg]'}`}>
-                      <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[0.4vw] h-[0.4vw] bg-slate-300 rotate-45"></div>
+           {units.map(u => (
+             <div key={u.id} className="absolute transition-all duration-100 ease-linear" style={{ left: `${u.position}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
+                <div className={`flex flex-col items-center justify-end ${u.team === 'player' ? '' : 'scale-x-[-1]'}`}>
+                   <div className={`w-[4vw] h-[0.5vw] bg-black/50 rounded-full mb-[0.5vw] overflow-hidden ${u.team === 'enemy' ? 'scale-x-[-1]' : ''} ${u.isBigSlime ? 'w-[7vw] mb-[1vw]' : ''} ${u.isMini ? 'w-[2.5vw]' : ''}`}>
+                      <div className={`h-full ${u.team === 'player' ? 'bg-sky-400' : 'bg-rose-500'}`} style={{ width: `${(u.health/u.maxHealth)*100}%` }}></div>
                    </div>
-                ) : (
-                   <div className="w-[0.8vw] h-[0.8vw] bg-purple-400 rounded-full shadow-[0_0_10px_#a855f7] animate-pulse"></div>
-                )}
-             </div>
-          ))}
-
-          {floatingTexts.map(ft => (
-             <div key={ft.id} className="absolute text-[0.8vw] font-black text-amber-400 animate-float" style={{ left: `${ft.x}%`, bottom: `${LAYOUT.LANE_BOTTOM + ft.y}%` }}>
-                <div className="flex items-center space-x-1">
-                   <Gem size={12} />
-                   <span>{ft.text}</span>
+                   <UnitRenderer unit={u} towerLevel={u.team === 'player' ? playerTowerLevel : 1} />
                 </div>
              </div>
-          ))}
+           ))}
+
+           {projectiles.map(p => (
+              <div key={p.id} className="absolute transition-all duration-100 ease-linear" style={{ left: `${p.x}%`, bottom: `${LAYOUT.LANE_BOTTOM + p.y}%` }}>
+                 {p.type === 'arrow' ? (
+                    <div className={`w-[1.5vw] h-[0.3vw] bg-white rounded-full shadow-sm origin-center ${p.vx > 0 ? 'rotate-[-10deg]' : 'rotate-[10deg]'}`}>
+                       <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[0.4vw] h-[0.4vw] bg-slate-300 rotate-45"></div>
+                    </div>
+                 ) : (
+                    <div className="w-[0.8vw] h-[0.8vw] bg-purple-400 rounded-full shadow-[0_0_10px_#a855f7] animate-pulse"></div>
+                 )}
+              </div>
+           ))}
+
+           {floatingTexts.map(ft => (
+              <div key={ft.id} className="absolute text-[0.8vw] font-black text-amber-400 animate-float" style={{ left: `${ft.x}%`, bottom: `${LAYOUT.LANE_BOTTOM + ft.y}%` }}>
+                 <div className="flex items-center space-x-1">
+                    <Gem size={12} />
+                    <span>{ft.text}</span>
+                 </div>
+              </div>
+           ))}
         </div>
 
         {/* HUD */}
@@ -532,31 +557,16 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
       </div>
 
       <style>{`
-          @keyframes dance-bounce {
-              0%, 100% { transform: translateY(0) scale(1); }
-              50% { transform: translateY(-15px) scale(1.05, 0.95); }
+          @keyframes rainbow-move { 
+            0% { background-position: 0% 50%; }
+            100% { background-position: 200% 50%; }
           }
-          @keyframes tongue-wag {
-              0% { transform: translateX(-50%) rotate(-5deg); }
-              100% { transform: translateX(-50%) rotate(5deg); }
-          }
-          @keyframes loading-bar {
-              0% { width: 0%; transform: translateX(-100%); }
-              50% { width: 100%; transform: translateX(0%); }
-              100% { width: 0%; transform: translateX(200%); }
+          @keyframes shimmer-slide {
+            0% { transform: translateX(-100%) rotate(45deg); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: translateX(200%) rotate(45deg); opacity: 0; }
           }
           @keyframes tower-idle { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02, 0.98); } }
-          @keyframes tower-hit { 
-            0% { transform: scale(1) translate(0, 0); } 
-            25% { transform: scale(1.1, 0.9) translate(-2px, 2px); } 
-            50% { transform: scale(0.9, 1.1) translate(2px, -2px); } 
-            75% { transform: scale(1.05, 0.95) translate(-1px, 1px); } 
-            100% { transform: scale(1) translate(0, 0); } 
-          }
-          @keyframes upgrade-aura {
-            0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.6); opacity: 1; transform: scale(0.8); }
-            100% { box-shadow: 0 0 60px 40px rgba(251, 191, 36, 0); opacity: 0; transform: scale(1.5); }
-          }
           @keyframes rainbow-rock-pulse {
             0%, 100% { filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.4)); transform: scale(1); }
             50% { filter: drop-shadow(0 0 16px rgba(168, 85, 247, 0.8)); transform: scale(1.02); }
@@ -564,10 +574,6 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
           @keyframes high-shimmer {
             0%, 100% { filter: hue-rotate(0deg) brightness(1); }
             50% { filter: hue-rotate(90deg) brightness(1.5); }
-          }
-          @keyframes micro-sparkle {
-            0%, 100% { opacity: 0; transform: scale(0); }
-            50% { opacity: 1; transform: scale(1); }
           }
           @keyframes rainbow-shard-pop {
             0% { transform: translate(0,0) rotate(0deg) scale(0); opacity: 1; }
@@ -589,52 +595,36 @@ const ResourceCrystal: React.FC<{ x: number; active: boolean }> = ({ x, active }
       style={{ 
         left: `${x}%`, 
         transform: `translateX(-50%) scale(${active ? 1.15 : 1})`, 
-        filter: active ? 'brightness(1.3) contrast(1.2)' : 'brightness(1)' 
       }}
     >
-      {/* Glow Aura */}
-      <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[12vw] h-[12vw] bg-gradient-radial from-purple-500/40 to-transparent blur-xl ${active ? 'opacity-100 scale-125' : 'opacity-50 scale-100'} transition-all duration-500`}></div>
+      <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[15vw] h-[15vw] bg-gradient-radial from-fuchsia-500/30 via-purple-500/10 to-transparent blur-2xl ${active ? 'opacity-100 animate-pulse' : 'opacity-40'}`}></div>
 
-      <div className="relative w-[8vw] h-[8vw] flex items-end justify-center">
-         {/* Main Crystal Formation */}
+      <div className="relative w-[8vw] h-[10vw] flex items-end justify-center">
          <div className={`relative w-full h-full ${active ? 'animate-[rainbow-rock-pulse_2s_infinite]' : ''}`}>
             
-            {/* Back Shards (Darker) */}
-            <div className="absolute bottom-0 left-[10%] w-[30%] h-[70%] bg-gradient-to-t from-indigo-900 via-purple-800 to-fuchsia-600 rotate-[-25deg] origin-bottom shadow-lg" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
-            <div className="absolute bottom-0 right-[15%] w-[25%] h-[60%] bg-gradient-to-t from-blue-900 via-indigo-700 to-cyan-500 rotate-[30deg] origin-bottom shadow-lg" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
+            <div className="absolute bottom-0 left-[5%] w-[30%] h-[60%] bg-gradient-to-t from-indigo-900 via-blue-600 to-cyan-300 rotate-[-35deg] origin-bottom shadow-lg skew-x-12" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
+            <div className="absolute bottom-0 right-[5%] w-[25%] h-[55%] bg-gradient-to-t from-purple-900 via-fuchsia-600 to-pink-300 rotate-[40deg] origin-bottom shadow-lg -skew-x-12" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
 
-            {/* Central Main Spikes */}
-            <div className="absolute bottom-0 left-[35%] w-[40%] h-[95%] bg-gradient-to-b from-white via-pink-400 to-purple-900 rotate-[-5deg] origin-bottom z-10 shadow-[0_0_15px_rgba(232,121,249,0.5)]" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}>
-               <div className="absolute inset-0 bg-white/20" style={{ clipPath: 'polygon(50% 0, 50% 100%, 0 100%)' }}></div>
+            <div className="absolute bottom-0 left-[30%] w-[40%] h-[95%] bg-gradient-to-b from-white via-cyan-400 to-indigo-900 rotate-[-5deg] origin-bottom z-10 shadow-[0_0_20px_rgba(34,211,238,0.4)]" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}>
+               <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/40 to-transparent animate-[high-shimmer_3s_infinite]"></div>
             </div>
             
-            {/* Front Spikes (Lighter/Translucent) */}
-            <div className="absolute bottom-0 left-[20%] w-[25%] h-[50%] bg-gradient-to-t from-emerald-600 via-teal-400 to-white/80 rotate-[-45deg] origin-bottom z-20 opacity-90" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
-            <div className="absolute bottom-0 right-[25%] w-[30%] h-[65%] bg-gradient-to-t from-orange-600 via-amber-400 to-yellow-200 rotate-[15deg] origin-bottom z-20 opacity-90" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
+            <div className="absolute bottom-0 left-[30%] w-[40%] h-[95%] z-11 mix-blend-overlay opacity-80" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)', background: 'linear-gradient(45deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)', backgroundSize: '200% 200%', animation: 'rainbow-move 4s linear infinite' }}></div>
 
-            {/* Floating Particles / Sparkles */}
-            <div className="absolute inset-0 overflow-visible">
-                {[...Array(4)].map((_, i) => (
-                    <div 
-                        key={i} 
-                        className="absolute w-[0.6vw] h-[0.6vw] bg-white rounded-full blur-[1px] animate-pulse" 
-                        style={{ 
-                            top: `${20 + Math.random() * 40}%`, 
-                            left: `${10 + Math.random() * 80}%`, 
-                            animationDelay: `${i * 0.5}s`,
-                            opacity: 0.8 
-                        }} 
-                    />
-                ))}
+            <div className="absolute bottom-0 left-[15%] w-[20%] h-[40%] bg-gradient-to-t from-emerald-800 via-teal-400 to-white/90 rotate-[-50deg] origin-bottom z-20" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
+            <div className="absolute bottom-0 right-[20%] w-[25%] h-[50%] bg-gradient-to-t from-orange-800 via-amber-400 to-yellow-100 rotate-[25deg] origin-bottom z-20" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
+
+            <div className="absolute inset-0 z-30 pointer-events-none overflow-hidden" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 0 100%)' }}>
+               {[...Array(3)].map((_, i) => (
+                 <div key={i} className="absolute w-full h-[2px] bg-white/40 rotate-[45deg] animate-[shimmer-slide_4s_infinite]" style={{ top: `${i * 30}%`, animationDelay: `${i * 0.5}s` }}></div>
+               ))}
             </div>
 
-            {/* Active Mining Effect sparks */}
-            {active && (
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full">
-                     <div className="absolute top-0 left-1/2 w-1 h-1 bg-white shadow-[0_0_5px_white] animate-[rainbow-shard-pop_0.8s_ease-out_infinite]" style={{ '--tx': '-2vw', '--ty': '-3vw', '--r': '-45deg' } as React.CSSProperties}></div>
-                     <div className="absolute top-[20%] left-[40%] w-1 h-1 bg-yellow-300 shadow-[0_0_5px_yellow] animate-[rainbow-shard-pop_0.8s_ease-out_infinite]" style={{ '--tx': '2vw', '--ty': '-2vw', '--r': '30deg', animationDelay: '0.2s' } as React.CSSProperties}></div>
-                </div>
-            )}
+            <div className="absolute inset-[-2vw] pointer-events-none">
+                {[...Array(6)].map((_, i) => (
+                    <div key={i} className="absolute w-[0.8vw] h-[0.8vw] text-white animate-sparkle" style={{ left: `${Math.random()*100}%`, top: `${Math.random()*100}%`, animationDelay: `${i*0.4}s` }}>✦</div>
+                ))}
+            </div>
          </div>
       </div>
     </div>
@@ -644,13 +634,11 @@ const UnitRenderer: React.FC<{ unit: ExtendedSlimeUnit, towerLevel: number }> = 
    const isPlayer = unit.team === 'player';
    const isMiner = unit.type === 'miner';
    const baseSize = unit.isBigSlime ? 'w-[7vw] h-[7vw]' : (unit.isMini ? 'w-[2.5vw] h-[2.5vw]' : 'w-[4vw] h-[4vw]');
-   
    const colorClass = isMiner ? 'bg-emerald-500' : (isPlayer ? 'bg-sky-400' : 'bg-rose-500');
 
    return (
       <div className={`relative ${baseSize} ${colorClass} rounded-t-[45%] rounded-b-[20%] shadow-lg border-2 border-white/10 flex items-center justify-center ${unit.isMining ? 'animate-bounce' : 'animate-squish'} transition-all duration-300`}>
          
-         {/* TOWER UPGRADE AURA SYSTEM FOR MINER */}
          {isMiner && towerLevel >= 2 && (
              <div className={`absolute inset-[-1vw] rounded-full bg-purple-500/20 blur-md animate-pulse border border-purple-400/30 ${towerLevel === 3 ? 'bg-purple-500/40' : ''}`}>
                 {towerLevel === 3 && (
@@ -663,34 +651,24 @@ const UnitRenderer: React.FC<{ unit: ExtendedSlimeUnit, towerLevel: number }> = 
              </div>
          )}
 
-         {/* MINER SPECIFIC VISUALS */}
          {isMiner && (
              <>
-                 {/* 1. Yellow Safety Helmet */}
                  <div className="absolute -top-[12%] w-[85%] h-[35%] bg-yellow-400 rounded-t-full border-b-2 border-yellow-600 z-10 flex items-center justify-center shadow-md">
                      <div className="w-[30%] h-[50%] bg-slate-800 rounded-sm border border-slate-600 flex items-center justify-center relative overflow-hidden mt-0.5">
                          <div className={`w-[60%] h-[60%] rounded-full ${unit.isMining ? 'bg-white shadow-[0_0_10px_white]' : 'bg-white/40'}`}></div>
                      </div>
                  </div>
 
-                 {/* 2. Mining Backpack - REPOSITIONED LOWER AND FURTHER BACK (Behind body) */}
                  <div className="absolute bottom-[2%] left-[-15%] w-[1.4vw] h-[2vw] bg-amber-900 rounded-md border-2 border-amber-950 z-[-1] rotate-[-8deg] shadow-lg">
                     {(unit.carriedGold || 0) > 0 && (
                         <div className="absolute -top-[0.5vw] left-1/2 -translate-x-1/2 w-[0.7vw] h-[0.7vw] bg-amber-400 rounded-sm border border-amber-600 shadow-sm animate-bounce flex items-center justify-center text-[0.4vw]">✨</div>
                     )}
                  </div>
 
-                 {/* 3. Small Arm Nub & PICKAXE (Attached and Scaled down) */}
                  <div className={`absolute -right-[0.5vw] top-[45%] z-40 flex items-center transition-transform duration-200 ${unit.isMining ? 'animate-[mining-swing_0.5s_ease-in-out_infinite]' : 'rotate-[15deg]'}`}>
-                    {/* Small Arm Nub */}
                     <div className="w-[0.9vw] h-[0.5vw] bg-emerald-600 rounded-full border border-white/10 shadow-sm"></div>
-                    
-                    {/* Resized Pickaxe (Attached to arm nub) */}
                     <div className="absolute left-[0.4vw] top-[-0.8vw] w-[1.8vw] h-[1.8vw] origin-bottom-left">
-                        {/* Wooden Shaft */}
                         <div className="absolute bottom-0 left-[20%] w-[12%] h-[95%] bg-[#5d3a1a] rounded-full border border-black/40 shadow-sm"></div>
-                        
-                        {/* Curved Pick Head */}
                         <div className="absolute top-[5%] left-[-0.6vw] w-[1.6vw] h-[0.4vw] flex items-center justify-center">
                             <div className="absolute right-1/2 w-[0.9vw] h-[0.3vw] bg-slate-400 rounded-l-full rotate-[-25deg] origin-right border-t border-slate-200"></div>
                             <div className="absolute left-1/2 w-[0.9vw] h-[0.3vw] bg-slate-400 rounded-r-full rotate-[25deg] origin-left border-t border-slate-200"></div>
@@ -698,14 +676,9 @@ const UnitRenderer: React.FC<{ unit: ExtendedSlimeUnit, towerLevel: number }> = 
                         </div>
                     </div>
                  </div>
-
-                 {/* 4. Worker Details */}
-                 <div className="absolute bottom-[10%] left-[10%] w-[0.5vw] h-[0.5vw] bg-black/20 rounded-full blur-[1px]"></div>
-                 <div className="absolute bottom-[15%] right-[10%] w-[0.4vw] h-[0.4vw] bg-black/15 rounded-full blur-[1px]"></div>
              </>
          )}
 
-         {/* Other Unit Visuals */}
          {!isMiner && (
              <>
                 {unit.isBigSlime && <div className="absolute inset-2 bg-red-500/30 rounded-full blur-md animate-pulse"></div>}
@@ -723,7 +696,6 @@ const UnitRenderer: React.FC<{ unit: ExtendedSlimeUnit, towerLevel: number }> = 
              </>
          )}
 
-         {/* Face - ALWAYS ON TOP OF HELMET/BODY */}
          <div className="relative z-20 flex flex-col items-center translate-y-[-10%]">
             <div className="flex space-x-[0.5vw]">
                <div className="w-[0.6vw] h-[0.6vw] bg-slate-900 rounded-full relative overflow-hidden">
@@ -733,7 +705,6 @@ const UnitRenderer: React.FC<{ unit: ExtendedSlimeUnit, towerLevel: number }> = 
                   <div className="absolute top-[20%] right-[20%] w-[35%] h-[35%] bg-white rounded-full"></div>
                </div>
             </div>
-            {isMiner && <div className="w-[0.4vw] h-[0.2vw] bg-slate-900/60 rounded-full mt-[0.2vw]"></div>}
          </div>
       </div>
    );
@@ -752,18 +723,8 @@ const TowerVisual: React.FC<{ team: 'player'|'enemy'; hp: number; maxHp: number;
    }, [hp]);
    
    const theme = isPlayer 
-     ? { 
-         gradient: 'from-sky-300 via-sky-400 to-sky-600', 
-         border: 'border-sky-200', 
-         blush: 'bg-rose-400/40',
-         crown: 'text-amber-300'
-       } 
-     : { 
-         gradient: 'from-rose-400 via-rose-500 to-rose-700', 
-         border: 'border-rose-200', 
-         blush: 'bg-rose-300/40',
-         crown: 'text-slate-300'
-       };
+     ? { gradient: 'from-sky-300 via-sky-400 to-sky-600', border: 'border-sky-200', blush: 'bg-rose-400/40', crown: 'text-amber-300' } 
+     : { gradient: 'from-rose-400 via-rose-500 to-rose-700', border: 'border-rose-200', blush: 'bg-rose-300/40', crown: 'text-slate-300' };
 
    const scale = towerLevel === 1 ? 'scale-100' : (towerLevel === 2 ? 'scale-110' : 'scale-120');
 
@@ -781,11 +742,8 @@ const TowerVisual: React.FC<{ team: 'player'|'enemy'; hp: number; maxHp: number;
             <div className={`absolute -top-[24%] left-1/2 -translate-x-1/2 text-[4vw] drop-shadow-xl z-10 ${theme.crown}`}>
               {towerLevel >= 3 ? '⚔️👑⚔️' : (towerLevel === 2 ? '🛡️👑🛡️' : '👑')}
             </div>
-            
             <div className={`w-full h-full rounded-t-[45%] rounded-b-[20%] bg-gradient-to-b ${theme.gradient} border-[0.3vw] ${theme.border} shadow-2xl relative overflow-hidden flex flex-col items-center pt-[20%]`}>
-               {towerLevel >= 2 && (
-                 <div className="absolute bottom-0 inset-x-0 h-1/3 bg-slate-900/30 backdrop-blur-sm border-t-2 border-amber-400/50"></div>
-               )}
+               {towerLevel >= 2 && <div className="absolute bottom-0 inset-x-0 h-1/3 bg-slate-900/30 backdrop-blur-sm border-t-2 border-amber-400/50"></div>}
                <div className="absolute top-[10%] left-[10%] w-[30%] h-[15%] bg-white/50 rounded-full rotate-[-20deg] blur-[1px]"></div>
                <div className="relative z-10 flex flex-col items-center">
                   <div className="flex space-x-[1.5vw]">
@@ -798,11 +756,7 @@ const TowerVisual: React.FC<{ team: 'player'|'enemy'; hp: number; maxHp: number;
                         {isHit && <div className="absolute inset-0 bg-red-500/50 animate-pulse"></div>}
                      </div>
                   </div>
-                  <div className="w-full flex justify-between px-[-1vw] mt-[0.2vw]">
-                     <div className={`w-[1.2vw] h-[0.6vw] ${theme.blush} rounded-full blur-[1px]`}></div>
-                     <div className={`w-[1.2vw] h-[0.6vw] ${theme.blush} rounded-full blur-[1px]`}></div>
-                  </div>
-                  <div className={`mt-[0.2vw] w-[1vw] h-[0.5vw] bg-slate-900/80 rounded-b-full transition-all duration-200 ${isHit ? 'h-[1.2vw] w-[1.2vw] rounded-full bg-slate-900' : ''}`}></div>
+                  <div className={`mt-[0.2vw] w-[1vw] h-[0.5vw] bg-slate-900/80 rounded-b-full ${isHit ? 'h-[1.2vw] w-[1.2vw] rounded-full bg-slate-900' : ''}`}></div>
                </div>
             </div>
          </div>
