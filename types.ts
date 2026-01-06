@@ -28,6 +28,7 @@ export interface SlimeUnit {
   isRetreating?: boolean;
   stuckArrows?: number;
   isBigSlime?: boolean;
+  isMini?: boolean; // For Mage Summons
 }
 
 export interface Projectile {
