@@ -49,10 +49,10 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
       const tip = await getBattleStrategy(level, playerStats.selectedDeck);
       if (mounted) {
         setAiTip(tip);
-        // Display strategy for at least 3 seconds
+        // Display strategy for 7 seconds
         setTimeout(() => {
           if (mounted) setIsStarting(false);
-        }, 3500);
+        }, 7000);
       }
     };
     fetchStrategy();
@@ -382,7 +382,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
              {/* Loading Text */}
              <div className="text-center mb-6">
                 <h3 className="header-font text-3xl font-black text-white italic tracking-widest animate-pulse">
-                    INITIALIZING...
+                    Loading...
                 </h3>
              </div>
 
