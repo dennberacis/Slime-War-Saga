@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PlayerStats } from '../types';
 import { 
   Settings, 
@@ -17,7 +17,8 @@ import {
   ShieldCheck,
   Banknote,
   ArrowRightLeft,
-  X
+  X,
+  Download
 } from 'lucide-react';
 
 interface MainMenuProps {
@@ -28,6 +29,30 @@ interface MainMenuProps {
 const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
   const [showModeSelector, setShowModeSelector] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    }
+  };
 
   return (
     <div className="h-full w-full bg-[#020617] flex flex-col relative overflow-hidden landscape:flex safe-area-inset">
@@ -153,7 +178,7 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
 
       {/* Grid Menu: Deck, Collection, Shop, etc. */}
       <div className="relative z-30 px-6 pb-6 md:pb-8 max-w-7xl mx-auto w-full">
-        <div className="grid grid-cols-4 md:grid-cols-6 gap-3 md:gap-6">
+        <div className="grid grid-cols-4 md:grid-cols-7 gap-3 md:gap-6">
           <MenuButton icon={<LayoutDashboard />} label="DECK" color="bg-indigo-600" />
           <MenuButton icon={<Boxes />} label="COLLECTION" color="bg-purple-600" />
           <MenuButton icon={<ShoppingBag />} label="SHOP" color="bg-rose-600" />
@@ -165,6 +190,14 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
             color="bg-emerald-600" 
             onClick={() => setShowWithdrawModal(true)} 
           />
+          {deferredPrompt && (
+             <MenuButton 
+               icon={<Download />} 
+               label="INSTALL" 
+               color="bg-blue-600" 
+               onClick={handleInstallClick} 
+             />
+          )}
         </div>
       </div>
 
