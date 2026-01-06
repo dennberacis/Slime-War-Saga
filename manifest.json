@@ -2,7 +2,9 @@
 {
   "name": "Slime War: Saga",
   "short_name": "Slime War",
-  "start_url": "./",
+  "id": "slime-war-saga",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
   "background_color": "#020617",
   "theme_color": "#020617",
