@@ -24,7 +24,7 @@ const MapSelection: React.FC<MapSelectionProps> = ({ stats, onBack, onStartLevel
     };
   });
 
-  // Level nodes 1-10 with Level 10 moved down to 25% Y to avoid top clipping
+  // Level nodes 1-10: Boss node (Level 10) lowered to y: 40 to avoid top clipping
   const forestNodes = [
     { id: 1, pos: { x: 15, y: 88 } },
     { id: 2, pos: { x: 38, y: 80 } },
@@ -33,13 +33,13 @@ const MapSelection: React.FC<MapSelectionProps> = ({ stats, onBack, onStartLevel
     { id: 5, pos: { x: 55, y: 55 } },
     { id: 6, pos: { x: 28, y: 48 } },
     { id: 7, pos: { x: 22, y: 32 } },
-    { id: 8, pos: { x: 48, y: 28 } },
-    { id: 9, pos: { x: 72, y: 34 } },
-    { id: 10, pos: { x: 88, y: 25 }, isBoss: true }, // The Boss Node
+    { id: 8, pos: { x: 42, y: 30 } },
+    { id: 9, pos: { x: 65, y: 35 } },
+    { id: 10, pos: { x: 88, y: 40 }, isBoss: true }, // Lowered Boss Node
   ];
 
-  // Updated path leading to the new Y position of node 10
-  const pathD = "M 15 88 Q 25 88 38 80 T 62 75 Q 78 72 82 62 T 55 55 T 28 48 Q 18 42 22 32 T 48 28 T 72 34 Q 82 32 88 25";
+  // Updated path leading to the new Y position (40) of node 10
+  const pathD = "M 15 88 Q 25 88 38 80 T 62 75 Q 78 72 82 62 T 55 55 T 28 48 Q 18 42 22 32 T 42 30 T 65 35 Q 82 38 88 40";
 
   return (
     <div className="h-full w-full bg-[#064e3b] flex flex-col overflow-hidden select-none relative font-sans landscape:flex">
@@ -102,13 +102,12 @@ const MapSelection: React.FC<MapSelectionProps> = ({ stats, onBack, onStartLevel
             >
               {/* Attached World Tree - Layered behind node 10 */}
               {node.id === 10 && (
-                <div className="absolute -top-10 md:-top-16 left-1/2 -translate-x-1/2 pointer-events-none z-0">
+                <div className="absolute -top-10 md:-top-14 left-1/2 -translate-x-1/2 pointer-events-none z-0">
                   <div className="relative flex flex-col items-center">
-                    {/* Small Tree Visual */}
-                    <span className="text-4xl md:text-7xl drop-shadow-[0_0_15px_rgba(168,85,247,0.7)] animate-float">🌳</span>
-                    {/* Subtle Pulse Aura */}
-                    <div className="absolute top-[40%] w-10 h-10 md:w-20 md:h-20 bg-purple-500/20 blur-[20px] rounded-full animate-pulse"></div>
-                    <Sparkles size={20} className="absolute -top-4 text-purple-300 animate-sparkle" />
+                    {/* Compact Tree Visual */}
+                    <span className="text-4xl md:text-6xl drop-shadow-[0_0_15px_rgba(168,85,247,0.7)] animate-float">🌳</span>
+                    <div className="absolute top-[40%] w-8 h-8 md:w-16 md:h-16 bg-purple-500/20 blur-[20px] rounded-full animate-pulse"></div>
+                    <Sparkles size={16} className="absolute -top-2 text-purple-300 animate-sparkle" />
                   </div>
                 </div>
               )}
@@ -165,7 +164,7 @@ const SagaNode: React.FC<SagaNodeProps> = ({ id, isBoss, unlocked, completed, on
     <div className="flex flex-col items-center group relative z-10">
       {/* Label Tag */}
       <div className={`relative px-2 py-0.5 z-20 saga-banner font-black text-white header-font text-[8px] md:text-[10px] transition-all
-        ${!unlocked ? 'bg-slate-700 opacity-60' : (isBoss ? 'bg-rose-600 shadow-[0_0_8px_rgba(225,29,72,0.5)]' : 'bg-[#4b6a1d]')}
+        ${!unlocked ? 'bg-slate-700 opacity-60' : (isBoss ? 'bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.7)]' : 'bg-[#4b6a1d]')}
       `}>
         {id}
       </div>
@@ -176,7 +175,7 @@ const SagaNode: React.FC<SagaNodeProps> = ({ id, isBoss, unlocked, completed, on
         disabled={!unlocked}
         className={`w-7 h-9 md:w-11 md:h-14 mt-[-3px] saga-shield border-b-[2px] md:border-b-4 flex items-center justify-center transition-all
           ${!unlocked ? 'bg-slate-800 border-slate-950 opacity-40 cursor-not-allowed' : 
-            (isBoss ? 'bg-gradient-to-b from-rose-500 to-rose-900 border-rose-950 animate-pulse' : 'bg-gradient-to-b from-amber-200 to-amber-500 border-amber-900 group-hover:scale-110 shadow-lg')}
+            (isBoss ? 'bg-gradient-to-b from-red-500 to-red-900 border-red-950 animate-pulse shadow-[0_0_15px_rgba(220,38,38,0.4)]' : 'bg-gradient-to-b from-amber-200 to-amber-500 border-amber-900 group-hover:scale-110 shadow-lg')}
         `}
       >
         {!unlocked ? (
