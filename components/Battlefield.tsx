@@ -303,23 +303,56 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
         {/* ====================
             LAYER 0: BACKGROUND
            ==================== */}
-        <div className="absolute inset-0 z-0">
-           {/* Sky */}
-           <div className={`absolute inset-0 bg-gradient-to-b ${theme.bgColor}`}></div>
+        <div className="absolute inset-0 z-0 bg-[#0f172a]">
            
-           {/* Mountains - STRICTLY MIRRORED */}
-           <div className="absolute bottom-[20%] left-0 right-0 h-[30%] opacity-30">
-              {/* Center Peak */}
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12vw] border-r-[12vw] border-b-[20vw] border-l-transparent border-r-transparent border-b-slate-900"></div>
-              {/* Left Peak */}
-              <div className="absolute bottom-0 left-[15%] w-0 h-0 border-l-[8vw] border-r-[8vw] border-b-[14vw] border-l-transparent border-r-transparent border-b-slate-800"></div>
-              {/* Right Peak (Mirrored) */}
-              <div className="absolute bottom-0 right-[15%] w-0 h-0 border-l-[8vw] border-r-[8vw] border-b-[14vw] border-l-transparent border-r-transparent border-b-slate-800"></div>
+           {/* Sky Gradient - Soft Fantasy Twilight */}
+           <div className="absolute inset-0 bg-gradient-to-b from-[#1e1b4b] via-[#312e81] to-[#701a75]"></div>
+           <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent"></div>
+           
+           {/* Static Stars/Dust */}
+           <div className="absolute inset-0 opacity-30" 
+                style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '60px 60px' }}></div>
+
+           {/* Layer 1: Far Mountains (Lightest/Atmospheric) */}
+           <div className="absolute bottom-[21%] left-0 right-0 h-[45%] text-indigo-300/20 pointer-events-none">
+              <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 1200 300">
+                 <path d="M0,200 C300,100 600,250 1200,120 L1200,300 L0,300 Z" fill="currentColor"/>
+              </svg>
            </div>
 
-           {/* Ground - Adjusted to new lane height */}
-           <div className="absolute left-0 right-0 bg-emerald-800 border-t-4 border-emerald-950 shadow-2xl" 
-                style={{ bottom: 0, height: `${LAYOUT.LANE_BOTTOM}%` }}></div>
+           {/* Layer 2: Mid Hills (Darker) */}
+           <div className="absolute bottom-[21%] left-0 right-0 h-[30%] text-indigo-900/40 pointer-events-none">
+              <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 1200 300">
+                 <path d="M0,250 C200,180 500,280 800,200 C1000,160 1200,240 1200,240 L1200,300 L0,300 Z" fill="currentColor"/>
+              </svg>
+           </div>
+
+           {/* Layer 3: Foreground Silhouette (Darkest) */}
+           <div className="absolute bottom-[21%] left-0 right-0 h-[25%] text-slate-900 pointer-events-none">
+              {/* Ground Shapes */}
+              <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 1200 200">
+                 <path d="M0,180 C150,150 300,190 600,160 C900,130 1050,170 1200,150 L1200,200 L0,200 Z" fill="currentColor"/>
+              </svg>
+
+              {/* Static Tree Elements */}
+              <div className="absolute bottom-0 left-[5%] w-[4vw] h-[10vw] flex flex-col items-center opacity-90">
+                 <div className="w-[60%] h-full bg-slate-900 rounded-t-full"></div>
+                 <div className="absolute top-[10%] w-[100%] h-[40%] bg-slate-900 rounded-full"></div>
+              </div>
+              <div className="absolute bottom-0 right-[8%] w-[5vw] h-[12vw] flex flex-col items-center opacity-90">
+                 <div className="w-[50%] h-full bg-slate-900 rounded-t-full"></div>
+                 <div className="absolute top-[15%] w-[100%] h-[35%] bg-slate-900 rounded-full"></div>
+              </div>
+           </div>
+
+           {/* Lane Ground - Calm Dark Gradient */}
+           <div className="absolute left-0 right-0 shadow-[0_-5px_30px_rgba(0,0,0,0.6)] z-10" 
+                style={{ bottom: 0, height: `${LAYOUT.LANE_BOTTOM}%` }}>
+                <div className="w-full h-full bg-gradient-to-b from-[#1e293b] to-[#020617] border-t border-white/5 relative overflow-hidden">
+                   {/* Subtle Texture */}
+                   <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+                </div>
+           </div>
         </div>
 
         {/* ====================
@@ -489,33 +522,172 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
 
 const TowerVisual: React.FC<{ team: 'player'|'enemy'; hp: number; maxHp: number }> = ({ team, hp, maxHp }) => {
    const isPlayer = team === 'player';
-   const color = isPlayer ? 'bg-emerald-500' : 'bg-rose-500';
+   const [isHit, setIsHit] = useState(false);
+   const prevHp = useRef(hp);
+
+   // Detect damage for wobble animation
+   useEffect(() => {
+     if (hp < prevHp.current) {
+       setIsHit(true);
+       const t = setTimeout(() => setIsHit(false), 400);
+       return () => clearTimeout(t);
+     }
+     prevHp.current = hp;
+   }, [hp]);
    
+   // Theme configuration
+   const theme = isPlayer 
+     ? { 
+         gradient: 'from-emerald-400 to-emerald-700', 
+         border: 'border-emerald-300/50', 
+         glow: 'shadow-[0_0_30px_rgba(52,211,153,0.4)]',
+         swirl: 'text-emerald-300',
+         hpBar: 'bg-emerald-500',
+         hpBg: 'bg-emerald-950',
+         bubble: 'bg-emerald-200'
+       } 
+     : { 
+         gradient: 'from-rose-400 to-rose-700', 
+         border: 'border-rose-300/50',
+         glow: 'shadow-[0_0_30px_rgba(251,113,133,0.4)]',
+         swirl: 'text-rose-300',
+         hpBar: 'bg-rose-500',
+         hpBg: 'bg-rose-950',
+         bubble: 'bg-rose-200'
+       };
+
    return (
-      <div className="flex flex-col items-center w-[8vw]">
-         {/* Fixed HP Bar - 80% Width */}
-         <div className="w-[80%] bg-slate-900/90 p-[0.15vw] rounded-full border border-white/20 shadow-md mb-[0.5vw] z-20 backdrop-blur-sm">
-            <div className="w-full h-[0.6vw] bg-slate-800/80 rounded-full overflow-hidden">
-               <div 
-                  className={`h-full ${color} transition-all duration-300 ease-out`} 
-                  style={{ width: `${Math.max(0, (hp/maxHp)*100)}%` }}
-               ></div>
-            </div>
+      <div className="flex flex-col items-center w-[8vw] relative group">
+         <style>{`
+            @keyframes soft-bounce {
+               0%, 100% { transform: scale(1); }
+               50% { transform: scale(1.02, 0.98); }
+            }
+            @keyframes breathe {
+               0%, 100% { transform: scale(1); opacity: 0.95; }
+               50% { transform: scale(1.03); opacity: 1; }
+            }
+            @keyframes liquid-spin {
+               from { transform: rotate(0deg); }
+               to { transform: rotate(360deg); }
+            }
+            @keyframes gentle-bubble {
+               0% { transform: translateY(20px) scale(0.5); opacity: 0; }
+               50% { opacity: 0.6; }
+               100% { transform: translateY(-20px) scale(1); opacity: 0; }
+            }
+            @keyframes hit-wobble {
+               0% { transform: scale(1) rotate(0deg); }
+               20% { transform: scale(1.2) rotate(-5deg); }
+               40% { transform: scale(1.1) rotate(5deg); }
+               60% { transform: scale(1.05) rotate(-3deg); }
+               80% { transform: scale(1.02) rotate(2deg); }
+               100% { transform: scale(1) rotate(0deg); }
+            }
+            .animate-hit-wobble {
+               animation: hit-wobble 0.4s ease-out;
+            }
+         `}</style>
+
+         {/* REDESIGNED: Slime-shaped HP Bar with Breathing Effect */}
+         <div className={`
+            relative z-30 mb-[1vw]
+            w-[120%] h-[1.6vw]
+            bg-slate-900/80 backdrop-blur-md
+            rounded-[0.8vw] /* Pill shape for liquid tube */
+            border-[0.2vw] ${theme.border}
+            shadow-lg overflow-hidden
+            transition-all duration-200
+            ${isHit ? 'animate-hit-wobble border-white/60 shadow-[0_0_20px_rgba(255,255,255,0.4)]' : ''}
+         `}
+         style={{ animation: isHit ? 'hit-wobble 0.4s ease-out' : 'breathe 5s ease-in-out infinite' }}
+         >
+             {/* Background Dark Liquid */}
+             <div className={`absolute inset-0 opacity-40 ${theme.hpBg}`}></div>
+
+             {/* Foreground Health Liquid */}
+             <div 
+                className={`h-full ${theme.hpBar} relative transition-all duration-500 ease-out flex items-center`}
+                style={{ width: `${Math.max(0, (hp/maxHp)*100)}%` }}
+             >
+                {/* Surface Gloss on Fluid */}
+                <div className="absolute top-0 inset-x-0 h-[40%] bg-white/40 blur-[1px] rounded-b-full opacity-80"></div>
+                
+                {/* Meniscus / Leading Edge Highlight */}
+                <div className="absolute right-0 top-0 bottom-0 w-[2px] bg-white/60 blur-[1px] shadow-[0_0_5px_white]"></div>
+             </div>
+
+             {/* Tube Glass Reflections (Static Overlay) */}
+             <div className="absolute top-[15%] left-[5%] w-[90%] h-[20%] bg-gradient-to-b from-white/30 to-transparent rounded-full blur-[0.5px] pointer-events-none"></div>
+             <div className="absolute bottom-[15%] left-[10%] w-[80%] h-[15%] bg-gradient-to-t from-white/10 to-transparent rounded-full blur-[1px] pointer-events-none"></div>
          </div>
 
-         {/* Tower Body - Matches parent width (8vw) */}
+         {/* Slime Tower Body - Slower Pulse */}
          <div className={`
             w-full h-[16vw] 
-            rounded-t-full rounded-b-[1vw]
-            bg-gradient-to-b from-slate-700 to-slate-900 
-            border-[0.3vw] border-slate-950 shadow-2xl 
-            flex items-end justify-center pb-[1vw]
+            rounded-t-[45%] rounded-b-[25%] 
+            bg-gradient-to-b ${theme.gradient}
+            border-[0.25vw] ${theme.border}
+            ${theme.glow}
+            flex items-end justify-center pb-[2.5vw]
             relative overflow-hidden
-         `}>
-            {/* Core Portal */}
-            <div className={`w-[5vw] h-[7vw] rounded-t-full bg-black/60 border-[0.2vw] ${isPlayer ? 'border-emerald-500/50' : 'border-rose-500/50'} relative overflow-hidden`}>
-               <div className={`absolute inset-0 opacity-50 blur-md animate-pulse ${color}`}></div>
+            transition-transform duration-500
+         `}
+         style={{ animation: 'soft-bounce 6s ease-in-out infinite' }}
+         >
+            {/* 1. Glossy Highlights (The "Wet" Look) */}
+            <div className="absolute top-[8%] left-[20%] w-[30%] h-[15%] bg-white/40 rounded-full blur-[2px] rotate-[-15deg]"></div>
+            <div className="absolute top-[12%] right-[15%] w-[10%] h-[8%] bg-white/30 rounded-full blur-[1px] rotate-[10deg]"></div>
+            
+            {/* 2. Inner Translucent Glow */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-white/10 opacity-60"></div>
+
+            {/* 3. Enhanced Swirling Portal Core - Slower Spin */}
+            <div className={`
+                relative w-[6vw] h-[7vw] 
+                rounded-full 
+                bg-slate-950/40 
+                border-[0.15vw] ${isPlayer ? 'border-emerald-200/20' : 'border-rose-200/20'} 
+                overflow-hidden 
+                shadow-[inset_0_0_20px_rgba(0,0,0,0.6)] 
+                flex items-center justify-center 
+                backdrop-blur-sm
+            `}>
+               
+               {/* Layer A: Slow Outer Swirl - Slowed down to 20s */}
+               <div className={`absolute w-[200%] h-[200%] opacity-30 ${theme.swirl} mix-blend-overlay`} 
+                    style={{ 
+                       background: 'conic-gradient(from 0deg, transparent 0%, currentColor 40%, transparent 80%)',
+                       animation: 'liquid-spin 20s linear infinite'
+                    }} 
+               />
+               
+               {/* Layer B: Reverse Inner Swirl - Slowed down to 15s */}
+               <div className={`absolute w-[180%] h-[180%] opacity-20 ${theme.swirl}`} 
+                    style={{ 
+                       background: 'conic-gradient(from 180deg, transparent 0%, currentColor 30%, transparent 60%)',
+                       animation: 'liquid-spin 15s linear infinite reverse'
+                    }} 
+               />
+
+               {/* Layer C: Gentle Particles/Bubbles */}
+               <div className={`absolute bottom-2 left-[40%] w-[0.4vw] h-[0.4vw] rounded-full ${theme.bubble} blur-[0.5px]`}
+                    style={{ animation: 'gentle-bubble 4s ease-in-out infinite' }}></div>
+               <div className={`absolute bottom-1 left-[60%] w-[0.3vw] h-[0.3vw] rounded-full ${theme.bubble} blur-[0.5px]`}
+                    style={{ animation: 'gentle-bubble 5s ease-in-out infinite 2s' }}></div>
+
+               {/* Deep Core (Calm Glow) */}
+               <div className="relative w-[55%] h-[55%] bg-slate-900/80 rounded-full shadow-[inset_0_0_15px_rgba(0,0,0,0.8)] flex items-center justify-center">
+                  <div className={`w-[40%] h-[40%] rounded-full ${theme.hpBar} blur-md opacity-70 animate-pulse`}
+                       style={{ animationDuration: '4s' }}></div>
+               </div>
+               
+               {/* Surface Glint */}
+               <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent pointer-events-none rounded-full"></div>
             </div>
+
+            {/* 4. Base Drips / Accents */}
+            <div className="absolute bottom-0 w-full h-[10%] bg-gradient-to-t from-black/20 to-transparent"></div>
          </div>
       </div>
    );
