@@ -586,13 +586,55 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
 const ResourceCrystal: React.FC<{ x: number; active: boolean }> = ({ x, active }) => (
     <div 
       className="absolute bottom-[20%] z-0 pointer-events-none transition-all duration-300" 
-      style={{ left: `${x}%`, transform: `translateX(-50%) scale(${active ? 1.1 : 1})`, filter: active ? 'brightness(1.5) contrast(1.3)' : 'brightness(1.1)' }}
+      style={{ 
+        left: `${x}%`, 
+        transform: `translateX(-50%) scale(${active ? 1.15 : 1})`, 
+        filter: active ? 'brightness(1.3) contrast(1.2)' : 'brightness(1)' 
+      }}
     >
-      <div className="relative w-[6vw] h-[6vw] flex items-end justify-center">
-         <div className="relative w-full h-full flex items-end justify-center">
-            <div className="absolute bottom-0 w-[80%] h-[90%] bg-gradient-to-t from-purple-800 via-purple-500 to-white/40" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)', boxShadow: '0 0 20px rgba(168,85,247,0.5)' }}></div>
-            <div className="absolute bottom-0 left-[10%] w-[40%] h-[50%] bg-purple-700/60 rotate-[-15deg]" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
-            <div className="absolute bottom-0 right-[10%] w-[40%] h-[60%] bg-purple-400/40 rotate-[20deg]" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
+      {/* Glow Aura */}
+      <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[12vw] h-[12vw] bg-gradient-radial from-purple-500/40 to-transparent blur-xl ${active ? 'opacity-100 scale-125' : 'opacity-50 scale-100'} transition-all duration-500`}></div>
+
+      <div className="relative w-[8vw] h-[8vw] flex items-end justify-center">
+         {/* Main Crystal Formation */}
+         <div className={`relative w-full h-full ${active ? 'animate-[rainbow-rock-pulse_2s_infinite]' : ''}`}>
+            
+            {/* Back Shards (Darker) */}
+            <div className="absolute bottom-0 left-[10%] w-[30%] h-[70%] bg-gradient-to-t from-indigo-900 via-purple-800 to-fuchsia-600 rotate-[-25deg] origin-bottom shadow-lg" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
+            <div className="absolute bottom-0 right-[15%] w-[25%] h-[60%] bg-gradient-to-t from-blue-900 via-indigo-700 to-cyan-500 rotate-[30deg] origin-bottom shadow-lg" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
+
+            {/* Central Main Spikes */}
+            <div className="absolute bottom-0 left-[35%] w-[40%] h-[95%] bg-gradient-to-b from-white via-pink-400 to-purple-900 rotate-[-5deg] origin-bottom z-10 shadow-[0_0_15px_rgba(232,121,249,0.5)]" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}>
+               <div className="absolute inset-0 bg-white/20" style={{ clipPath: 'polygon(50% 0, 50% 100%, 0 100%)' }}></div>
+            </div>
+            
+            {/* Front Spikes (Lighter/Translucent) */}
+            <div className="absolute bottom-0 left-[20%] w-[25%] h-[50%] bg-gradient-to-t from-emerald-600 via-teal-400 to-white/80 rotate-[-45deg] origin-bottom z-20 opacity-90" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
+            <div className="absolute bottom-0 right-[25%] w-[30%] h-[65%] bg-gradient-to-t from-orange-600 via-amber-400 to-yellow-200 rotate-[15deg] origin-bottom z-20 opacity-90" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
+
+            {/* Floating Particles / Sparkles */}
+            <div className="absolute inset-0 overflow-visible">
+                {[...Array(4)].map((_, i) => (
+                    <div 
+                        key={i} 
+                        className="absolute w-[0.6vw] h-[0.6vw] bg-white rounded-full blur-[1px] animate-pulse" 
+                        style={{ 
+                            top: `${20 + Math.random() * 40}%`, 
+                            left: `${10 + Math.random() * 80}%`, 
+                            animationDelay: `${i * 0.5}s`,
+                            opacity: 0.8 
+                        }} 
+                    />
+                ))}
+            </div>
+
+            {/* Active Mining Effect sparks */}
+            {active && (
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full">
+                     <div className="absolute top-0 left-1/2 w-1 h-1 bg-white shadow-[0_0_5px_white] animate-[rainbow-shard-pop_0.8s_ease-out_infinite]" style={{ '--tx': '-2vw', '--ty': '-3vw', '--r': '-45deg' } as React.CSSProperties}></div>
+                     <div className="absolute top-[20%] left-[40%] w-1 h-1 bg-yellow-300 shadow-[0_0_5px_yellow] animate-[rainbow-shard-pop_0.8s_ease-out_infinite]" style={{ '--tx': '2vw', '--ty': '-2vw', '--r': '30deg', animationDelay: '0.2s' } as React.CSSProperties}></div>
+                </div>
+            )}
          </div>
       </div>
     </div>
