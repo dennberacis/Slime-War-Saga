@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { PlayerStats, SlimeUnit, SlimeType, Projectile } from '../types';
 import { SLIME_CONFIGS, getThemeForLevel } from '../constants';
-import { Sword, Undo2, Users, ShieldPlus, Gem, ChevronUp } from 'lucide-react';
+import { Sword, Undo2, Users, ShieldPlus, Gem, ChevronUp, Shield } from 'lucide-react';
 import { getBattleStrategy } from '../services/geminiService';
 
 interface BattlefieldProps {
@@ -32,6 +32,8 @@ const TOWER_UPGRADES = [
 const MINER_CAPACITY = 20;
 const MINER_HIT_INTERVAL = 1200;
 
+type CommandType = 'attack' | 'defend' | 'retreat';
+
 interface ExtendedSlimeUnit extends SlimeUnit {
   carriedGold?: number;
   lastMineTime?: number;
@@ -54,7 +56,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
   const [units, setUnits] = useState<ExtendedSlimeUnit[]>([]);
   const [projectiles, setProjectiles] = useState<Projectile[]>([]);
   const [spawnQueue, setSpawnQueue] = useState<{type: string, team: 'player'|'enemy'}[]>([]);
-  const [isRetreating, setIsRetreating] = useState(false);
+  const [playerCommand, setPlayerCommand] = useState<CommandType>('defend');
   const [cooldowns, setCooldowns] = useState<Record<string, number>>({});
   
   const gameLoopRef = useRef<number>(null);
@@ -69,12 +71,15 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     isStarting,
     spawnQueue,
     playerTowerLevel,
-    cameraX
+    cameraX,
+    playerCommand
   });
 
   useEffect(() => {
-    gameStateRef.current = { units, enemyGold, playerGold, gameResult, isStarting, spawnQueue, playerTowerLevel, cameraX };
-  }, [units, enemyGold, playerGold, gameResult, isStarting, spawnQueue, playerTowerLevel, cameraX]);
+    gameStateRef.current = { 
+        units, enemyGold, playerGold, gameResult, isStarting, spawnQueue, playerTowerLevel, cameraX, playerCommand 
+    };
+  }, [units, enemyGold, playerGold, gameResult, isStarting, spawnQueue, playerTowerLevel, cameraX, playerCommand]);
 
   useEffect(() => {
     let mounted = true;
@@ -225,6 +230,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
       setCameraX(prevX => prevX + (clampedTargetX - prevX) * 0.05);
 
       next.forEach(u => {
+        // Mage Summon Logic
         if (u.type === 'mage' && !u.isDead && (time - (u.lastSummonTime || 0) > 10000)) {
            u.lastSummonTime = time;
            newSummons.push({
@@ -248,15 +254,28 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
         const myTower = u.team === 'player' ? LAYOUT.TOWER_LEFT : LAYOUT.TOWER_RIGHT;
         const enTower = u.team === 'player' ? LAYOUT.TOWER_RIGHT : LAYOUT.TOWER_LEFT;
         const rockPos = u.team === 'player' ? LAYOUT.TOWER_LEFT + 25 : LAYOUT.TOWER_RIGHT - 25;
-        const isRetreat = (u.team === 'player' && isRetreating) || u.isRetreating;
+        
+        // --- COMMAND LOGIC ---
+        const command = u.team === 'player' ? gameStateRef.current.playerCommand : 'attack'; // Enemy always attacks for now
 
-        if (isRetreat) {
-          if (Math.abs(u.position - myTower) < 2) { toRemove.add(u.id); return; }
-          const dir = u.team === 'player' ? -1 : 1;
-          u.position += dir * u.speed * 2 * (dt / 16);
-          return;
+        // 1. RETREAT LOGIC (Priority 1)
+        // Overrides everything. Units move to tower and vanish (are saved).
+        if (command === 'retreat') {
+           u.isRetreating = true; // For visual flags if needed
+           u.target = undefined; // Clear combat targets
+           
+           if (Math.abs(u.position - myTower) < 3) { 
+              toRemove.add(u.id); // Unit safely entered the tower
+              return; 
+           }
+           const dir = u.position < myTower ? 1 : -1;
+           u.position += dir * u.speed * (dt / 16);
+           return; // Skip other logic
+        } else {
+           u.isRetreating = false;
         }
 
+        // 2. MINER LOGIC (Priority 2)
         if (u.type === 'miner') {
            const speedMultiplier = u.team === 'player' ? (gameStateRef.current.playerTowerLevel === 2 ? 1.15 : (gameStateRef.current.playerTowerLevel === 3 ? 1.3 : 1)) : 1;
            const currentHitInterval = MINER_HIT_INTERVAL / speedMultiplier;
@@ -296,56 +315,47 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
            return;
         }
 
+        // 3. COMBAT LOGIC (Attack / Defend)
         const boundaryP = LAYOUT.TOWER_LEFT + 2; 
         const boundaryE = LAYOUT.TOWER_RIGHT - 2;
+        // Optimization: pre-filter potential targets
         const enemies = next.filter(e => e.team !== u.team && !e.isDead && (e.team === 'player' ? e.position <= boundaryE : e.position >= boundaryP));
         let target: ExtendedSlimeUnit | null = null;
         let minDist = 1000;
+        
         enemies.forEach(e => {
           const d = Math.abs(u.position - e.position);
           if (d < minDist) { minDist = d; target = e; }
         });
 
         const towerDist = Math.abs(u.position - enTower);
-        const inRange = (target && minDist <= u.range) || towerDist <= u.range;
+        // Tower is a valid target if attacking
+        const isTargetingTower = !target && towerDist <= u.range; 
+        const inRange = (target && minDist <= u.range) || isTargetingTower;
 
-        if (inRange) {
-           if (time - u.lastAttackTime > 1200) {
-              if (u.type === 'archer' || (u.type === 'mage' && !u.isMini)) {
-                 const tX = target ? target.position : enTower;
-                 const travelDistance = Math.abs(tX - u.position);
-                 const travelTime = travelDistance * 2 + 10;
-                 const vx = (tX - u.position) / travelTime;
-                 const vy = 0.5 * GRAVITY * travelTime;
-                 projectilesRef.current.push({
-                   id: Math.random().toString(),
-                   type: u.type === 'mage' ? 'magic' : 'arrow',
-                   team: u.team,
-                   x: u.position,
-                   y: 5,
-                   targetX: tX,
-                   targetId: target ? target.id : 'tower',
-                   damage: u.attack,
-                   speed: 1,
-                   vx, vy,
-                   isDone: false
-                 });
-              } else {
-                 if (target) {
-                    target.health -= u.attack;
-                    if (u.isBigSlime) target.position += (u.team === 'player' ? 5 : -5);
-                 } else {
-                    if (u.team === 'player') setEnemyHP(h => Math.max(0, h - u.attack));
-                    else setPlayerHP(h => Math.max(0, h - u.attack));
-                 }
-              }
-              u.lastAttackTime = time;
-           }
+        if (command === 'defend') {
+            // DEFEND: Only attack if enemy enters range. DO NOT MOVE to chase.
+            if (inRange) {
+               // Attack Logic
+               if (time - u.lastAttackTime > 1200) {
+                  performAttack(u, target, enTower, time, projectilesRef);
+               }
+            }
+            // Else: Hold Position.
         } else {
-           const dir = u.team === 'player' ? 1 : -1;
-           u.position += dir * u.speed * (dt / 16);
+            // ATTACK: Move forward, engage if in range.
+            if (inRange) {
+               if (time - u.lastAttackTime > 1200) {
+                  performAttack(u, target, enTower, time, projectilesRef);
+               }
+            } else {
+               // Move Forward
+               const dir = u.team === 'player' ? 1 : -1;
+               u.position += dir * u.speed * (dt / 16);
+            }
         }
       });
+      
       if (projectilesRef.current.length > 0) {
          setProjectiles(p => [...p, ...projectilesRef.current]);
          projectilesRef.current = [];
@@ -361,17 +371,35 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
           p.vy -= GRAVITY * (dt / 16);
           let hit = false;
           const targetTowerX = p.team === 'player' ? LAYOUT.TOWER_RIGHT : LAYOUT.TOWER_LEFT;
+          
+          // Tower Hit Check
           if (Math.abs(p.x - targetTowerX) < 4 && p.y <= 5) {
             if (p.team === 'player') setEnemyHP(h => Math.max(0, h - p.damage));
             else setPlayerHP(h => Math.max(0, h - p.damage));
             hit = true;
           }
+          
+          // Unit Hit Check
           if (!hit) {
             setUnits(uPrev => {
               uPrev.forEach(u => {
+                // Friendly fire check handled by target logic usually, but here just check opposite team
                 if (u.team !== p.team && !u.isDead && Math.abs(u.position - p.x) < 3 && p.y <= 5) {
                    const isSafe = u.team === 'player' ? u.position < (LAYOUT.TOWER_LEFT + 2) : u.position > (LAYOUT.TOWER_RIGHT - 2);
-                   if (!isSafe) { u.health -= p.damage; if (p.type === 'arrow') u.stuckArrows = (u.stuckArrows || 0) + 1; hit = true; }
+                   if (!isSafe) { 
+                      // Apply damage. If retreating, units are tougher (or prompt says "Do NOT die", but let's just apply damage for now)
+                      // Prompt: "Units do NOT die while retreating." -> We clamp HP at 1 if retreating.
+                      const isRetreatingUnit = u.team === 'player' && gameStateRef.current.playerCommand === 'retreat';
+                      
+                      if (isRetreatingUnit) {
+                          u.health = Math.max(1, u.health - p.damage);
+                      } else {
+                          u.health -= p.damage; 
+                      }
+                      
+                      if (p.type === 'arrow') u.stuckArrows = (u.stuckArrows || 0) + 1; 
+                      hit = true; 
+                   }
                 }
               });
               return uPrev;
@@ -383,7 +411,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     });
 
     gameLoopRef.current = requestAnimationFrame(update);
-  }, [gameResult, isRetreating, isStarting]);
+  }, [gameResult, isStarting]);
 
   useEffect(() => {
     gameLoopRef.current = requestAnimationFrame(update);
@@ -395,6 +423,39 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     if (enemyHP <= 0) { setGameResult('win'); setTimeout(onWin, 4000); }
     if (playerHP <= 0) { setGameResult('lose'); setTimeout(onLose, 4000); }
   }, [enemyHP, playerHP, gameResult, onWin, onLose]);
+
+  // Helper for attacks
+  const performAttack = (u: ExtendedSlimeUnit, target: ExtendedSlimeUnit | null, enTower: number, time: number, projRef: any) => {
+      if (u.type === 'archer' || (u.type === 'mage' && !u.isMini)) {
+         const tX = target ? target.position : enTower;
+         const travelDistance = Math.abs(tX - u.position);
+         const travelTime = travelDistance * 2 + 10;
+         const vx = (tX - u.position) / travelTime;
+         const vy = 0.5 * GRAVITY * travelTime;
+         projRef.current.push({
+           id: Math.random().toString(),
+           type: u.type === 'mage' ? 'magic' : 'arrow',
+           team: u.team,
+           x: u.position,
+           y: 5,
+           targetX: tX,
+           targetId: target ? target.id : 'tower',
+           damage: u.attack,
+           speed: 1,
+           vx, vy,
+           isDone: false
+         });
+      } else {
+         if (target) {
+            target.health -= u.attack;
+            if (u.isBigSlime) target.position += (u.team === 'player' ? 5 : -5);
+         } else {
+            if (u.team === 'player') setEnemyHP(h => Math.max(0, h - u.attack));
+            else setPlayerHP(h => Math.max(0, h - u.attack));
+         }
+      }
+      u.lastAttackTime = time;
+  };
 
   const currentPop = units.filter(u => u.team === 'player').length + spawnQueue.filter(q => q.team === 'player').length;
   const isPlayerMining = units.some(u => u.team === 'player' && u.type === 'miner' && u.isMining);
@@ -449,11 +510,17 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
 
            {units.map(u => (
              <div key={u.id} className="absolute transition-all duration-100 ease-linear" style={{ left: `${u.position}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
-                <div className={`flex flex-col items-center justify-end ${u.team === 'player' ? '' : 'scale-x-[-1]'}`}>
+                {/* Visual Wrapper for direction flipping */}
+                <div className={`flex flex-col items-center justify-end transition-transform duration-300 ${
+                    // Face direction of movement or enemy
+                    (u.team === 'player' && gameStateRef.current.playerCommand !== 'retreat') || (u.team === 'enemy') 
+                    ? '' // Player attacking/defending or Enemy attacking -> Face Right (Normal)
+                    : 'scale-x-[-1]' // Player Retreating -> Face Left (Flipped)
+                }`}>
                    <div className={`w-[4vw] h-[0.5vw] bg-black/50 rounded-full mb-[0.5vw] overflow-hidden ${u.team === 'enemy' ? 'scale-x-[-1]' : ''} ${u.isBigSlime ? 'w-[7vw] mb-[1vw]' : ''} ${u.isMini ? 'w-[2.5vw]' : ''}`}>
                       <div className={`h-full ${u.team === 'player' ? 'bg-sky-400' : 'bg-rose-500'}`} style={{ width: `${(u.health/u.maxHealth)*100}%` }}></div>
                    </div>
-                   <UnitRenderer unit={u} towerLevel={u.team === 'player' ? playerTowerLevel : 1} />
+                   <UnitRenderer unit={u} towerLevel={u.team === 'player' ? playerTowerLevel : 1} command={u.team === 'player' ? playerCommand : 'attack'} />
                 </div>
              </div>
            ))}
@@ -537,11 +604,19 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
 
            <div className="w-full h-[18%] px-6 pb-2 flex justify-end items-end pointer-events-auto">
               <div className="flex flex-col gap-2 bg-slate-900/80 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-xl">
-                <button onClick={() => setIsRetreating(false)} className={`w-[4vw] h-[4vw] max-w-[48px] max-h-[48px] rounded-xl flex items-center justify-center shadow-lg border-2 border-white/20 transition-all active:scale-90 ${!isRetreating ? 'bg-rose-500 border-white' : 'bg-slate-800 text-white/50'}`}>
-                   <Sword className="w-[2vw] h-[2vw] max-w-[24px] max-h-[24px] text-white" />
+                {/* ATTACK COMMAND */}
+                <button onClick={() => setPlayerCommand('attack')} className={`w-[4vw] h-[4vw] max-w-[48px] max-h-[48px] rounded-xl flex items-center justify-center shadow-lg border-2 border-white/20 transition-all active:scale-90 ${playerCommand === 'attack' ? 'bg-rose-500 border-white shadow-[0_0_15px_rgba(244,63,94,0.5)]' : 'bg-slate-800 text-white/30'}`}>
+                   <Sword className={`w-[2vw] h-[2vw] max-w-[24px] max-h-[24px] ${playerCommand === 'attack' ? 'text-white animate-pulse' : ''}`} />
                 </button>
-                <button onClick={() => setIsRetreating(true)} className={`w-[4vw] h-[4vw] max-w-[48px] max-h-[48px] rounded-xl flex items-center justify-center shadow-lg border-2 border-white/20 transition-all active:scale-90 ${isRetreating ? 'bg-emerald-500 border-white' : 'bg-slate-800 text-white/50'}`}>
-                   <Undo2 className="w-[2vw] h-[2vw] max-w-[24px] max-h-[24px] text-white" />
+                
+                {/* DEFEND COMMAND */}
+                <button onClick={() => setPlayerCommand('defend')} className={`w-[4vw] h-[4vw] max-w-[48px] max-h-[48px] rounded-xl flex items-center justify-center shadow-lg border-2 border-white/20 transition-all active:scale-90 ${playerCommand === 'defend' ? 'bg-blue-500 border-white shadow-[0_0_15px_rgba(59,130,246,0.5)]' : 'bg-slate-800 text-white/30'}`}>
+                   <Shield className={`w-[2vw] h-[2vw] max-w-[24px] max-h-[24px] ${playerCommand === 'defend' ? 'text-white' : ''}`} />
+                </button>
+
+                {/* RETREAT COMMAND */}
+                <button onClick={() => setPlayerCommand('retreat')} className={`w-[4vw] h-[4vw] max-w-[48px] max-h-[48px] rounded-xl flex items-center justify-center shadow-lg border-2 border-white/20 transition-all active:scale-90 ${playerCommand === 'retreat' ? 'bg-emerald-500 border-white shadow-[0_0_15px_rgba(16,185,129,0.5)]' : 'bg-slate-800 text-white/30'}`}>
+                   <Undo2 className={`w-[2vw] h-[2vw] max-w-[24px] max-h-[24px] ${playerCommand === 'retreat' ? 'text-white' : ''}`} />
                 </button>
               </div>
            </div>
@@ -630,14 +705,20 @@ const ResourceCrystal: React.FC<{ x: number; active: boolean }> = ({ x, active }
     </div>
 );
 
-const UnitRenderer: React.FC<{ unit: ExtendedSlimeUnit, towerLevel: number }> = ({ unit, towerLevel }) => {
+const UnitRenderer: React.FC<{ unit: ExtendedSlimeUnit, towerLevel: number, command: CommandType }> = ({ unit, towerLevel, command }) => {
    const isPlayer = unit.team === 'player';
    const isMiner = unit.type === 'miner';
    const baseSize = unit.isBigSlime ? 'w-[7vw] h-[7vw]' : (unit.isMini ? 'w-[2.5vw] h-[2.5vw]' : 'w-[4vw] h-[4vw]');
    const colorClass = isMiner ? 'bg-emerald-500' : (isPlayer ? 'bg-sky-400' : 'bg-rose-500');
 
+   // Dynamic leaning based on command
+   let pose = '';
+   if (command === 'attack') pose = 'rotate-12'; // Lean forward
+   else if (command === 'defend') pose = '-rotate-6'; // Lean back
+   else if (command === 'retreat') pose = 'rotate-0'; // Upright run
+
    return (
-      <div className={`relative ${baseSize} ${colorClass} rounded-t-[45%] rounded-b-[20%] shadow-lg border-2 border-white/10 flex items-center justify-center ${unit.isMining ? 'animate-bounce' : 'animate-squish'} transition-all duration-300`}>
+      <div className={`relative ${baseSize} ${colorClass} rounded-t-[45%] rounded-b-[20%] shadow-lg border-2 border-white/10 flex items-center justify-center ${unit.isMining ? 'animate-bounce' : 'animate-squish'} ${pose} transition-all duration-300`}>
          
          {isMiner && towerLevel >= 2 && (
              <div className={`absolute inset-[-1vw] rounded-full bg-purple-500/20 blur-md animate-pulse border border-purple-400/30 ${towerLevel === 3 ? 'bg-purple-500/40' : ''}`}>

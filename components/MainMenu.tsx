@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { PlayerStats } from '../types';
 import { 
@@ -13,7 +12,6 @@ import {
   Boxes,
   Zap,
   Gamepad2,
-  ChevronRight,
   ShieldCheck,
   Banknote,
   ArrowRightLeft,
@@ -34,13 +32,12 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
   const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
-    // Check if app is already installed/standalone
+    // Check if app is already installed
     if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true) {
       setIsStandalone(true);
     }
 
     const handleBeforeInstallPrompt = (e: any) => {
-      console.log('Capture beforeinstallprompt');
       e.preventDefault();
       setDeferredPrompt(e);
     };
@@ -57,17 +54,14 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
-        console.log('User accepted the install prompt');
         setDeferredPrompt(null);
-      } else {
-        console.log('User dismissed the install prompt');
       }
     }
   };
 
   return (
     <div className="h-full w-full bg-[#020617] flex flex-col relative overflow-hidden landscape:flex safe-area-inset">
-      {/* Background with Dancing Slimes and Floating Crystals */}
+      {/* Background Decor */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-[#0f172a]/40 to-transparent"></div>
         <img 
@@ -75,30 +69,14 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
           className="w-full h-full object-cover opacity-15 mix-blend-screen scale-105"
           alt="Battlefield"
         />
-        
         <div className="absolute inset-0 opacity-30">
            <DancingSlime color="bg-sky-400" top="60%" left="8%" delay="0s" scale="scale-100" />
            <DancingSlime color="bg-purple-400" top="55%" left="88%" delay="0.5s" scale="scale-75" />
            <DancingSlime color="bg-emerald-400" top="72%" left="42%" delay="1s" scale="scale-110" />
         </div>
-
-        {[...Array(12)].map((_, i) => (
-          <div 
-            key={i} 
-            className={`absolute animate-float opacity-20 ${i % 2 === 0 ? 'text-sky-300' : 'text-purple-400'}`}
-            style={{ 
-              top: `${Math.random() * 80 + 10}%`, 
-              left: `${Math.random() * 90 + 5}%`,
-              animationDelay: `${Math.random() * 5}s`,
-              animationDuration: `${4 + Math.random() * 4}s`
-            }}
-          >
-            {i % 2 === 0 ? '💎' : '🔮'}
-          </div>
-        ))}
       </div>
 
-      {/* Top HUD: Profile & Economy */}
+      {/* Top HUD */}
       <div className="relative z-30 pt-4 px-6 md:pt-6 md:px-10 flex justify-between items-start">
         <div className="flex items-center space-x-3 bg-black/60 backdrop-blur-2xl p-2 rounded-2xl border border-white/10 shadow-xl hover:border-sky-500/40 transition-all cursor-pointer group active:scale-95">
           <div className="relative">
@@ -121,22 +99,9 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
           </div>
         </div>
 
-        {/* Wallet Section */}
         <div className="flex space-x-2 md:space-x-4">
-          <WalletItem 
-            icon="💎" 
-            value={stats.diamonds} 
-            label="Blue Gems" 
-            color="text-sky-300" 
-            glow="text-sky-400"
-          />
-          <WalletItem 
-            icon="🔮" 
-            value={stats.purpleCrystals} 
-            label="PHP Gems" 
-            color="text-purple-400" 
-            glow="text-purple-500"
-          />
+          <WalletItem icon="💎" value={stats.diamonds} label="Blue Gems" color="text-sky-300" glow="text-sky-400" />
+          <WalletItem icon="🔮" value={stats.purpleCrystals} label="PHP Gems" color="text-purple-400" glow="text-purple-500" />
           <button className="p-3 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 hover:bg-white/10 transition-all active:scale-90 group shadow-lg">
             <Settings size={20} className="text-white/60 group-hover:rotate-90 transition-transform" />
           </button>
@@ -145,18 +110,18 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
 
       {/* Hero Center Section */}
       <div className="flex-1 flex flex-col items-center justify-center relative z-10 px-6 -mt-2">
-        {/* Proactive Install Banner if Eligible */}
+        {/* PWA Install Promo */}
         {deferredPrompt && !isStandalone && (
-          <div className="mb-6 animate-bounce">
+          <div className="mb-6 animate-float">
             <button 
               onClick={handleInstallClick}
-              className="bg-sky-500/20 backdrop-blur-xl border border-sky-400/50 rounded-full px-6 py-2 flex items-center space-x-3 group hover:bg-sky-500/40 transition-all shadow-lg"
+              className="bg-sky-500/20 backdrop-blur-xl border border-sky-400/50 rounded-full px-6 py-2.5 flex items-center space-x-3 group hover:bg-sky-500/40 transition-all shadow-lg active:scale-95"
             >
               <Gift className="text-yellow-400 animate-pulse" size={18} />
               <span className="text-[10px] md:text-xs font-black text-white uppercase tracking-widest">
-                Install to Home Screen & Claim <span className="text-sky-400">100 Gems!</span>
+                Install App to Claim <span className="text-sky-400">100 Gems Bonus!</span>
               </span>
-              <Download size={14} className="text-white/60 group-hover:translate-y-1 transition-transform" />
+              <Download size={14} className="text-white/60 group-hover:translate-y-0.5 transition-transform" />
             </button>
           </div>
         )}
@@ -214,25 +179,19 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
             onClick={() => setShowWithdrawModal(true)} 
           />
           {deferredPrompt && !isStandalone ? (
-             <MenuButton 
-               icon={<Download />} 
-               label="INSTALL" 
-               color="bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)] animate-pulse" 
-               onClick={handleInstallClick} 
-             />
+            <MenuButton icon={<Download />} label="INSTALL" color="bg-sky-500 animate-pulse" onClick={handleInstallClick} />
           ) : (
-             <MenuButton icon={<ShieldCheck />} label="SECURE" color="bg-slate-700" />
+            <MenuButton icon={<ShieldCheck />} label="SECURE" color="bg-slate-700" />
           )}
         </div>
       </div>
 
-      {/* Modals remain same... */}
+      {/* Modals */}
       {showModeSelector && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md" onClick={() => setShowModeSelector(false)}></div>
           <div className="relative w-full max-w-3xl bg-slate-900 border-2 border-white/10 rounded-[32px] md:rounded-[48px] p-6 md:p-12 shadow-2xl flex flex-col items-center">
             <h2 className="text-3xl md:text-6xl font-black text-white header-font tracking-tighter italic mb-8 md:mb-12">CHOOSE YOUR PATH</h2>
-            
             <div className="grid grid-cols-2 gap-4 md:gap-12 w-full">
               <ModeCard 
                 icon={<ShieldCheck size={48} />}
@@ -250,13 +209,7 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
                 onClick={() => { setShowModeSelector(false); onPlay(); }}
               />
             </div>
-            
-            <button 
-              onClick={() => setShowModeSelector(false)}
-              className="mt-8 md:mt-12 text-white/40 font-black uppercase text-xs tracking-[0.4em] hover:text-white transition-colors"
-            >
-              Cancel Selection
-            </button>
+            <button onClick={() => setShowModeSelector(false)} className="mt-8 md:mt-12 text-white/40 font-black uppercase text-xs tracking-[0.4em] hover:text-white transition-colors">Cancel Selection</button>
           </div>
         </div>
       )}
@@ -265,18 +218,10 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-lg" onClick={() => setShowWithdrawModal(false)}></div>
           <div className="relative w-full max-w-md bg-slate-900 border-2 border-purple-500/30 rounded-[32px] p-8 shadow-2xl flex flex-col items-center">
-            <button 
-              onClick={() => setShowWithdrawModal(false)}
-              className="absolute top-4 right-4 p-2 text-white/20 hover:text-white transition-colors"
-            >
-              <X size={24} />
-            </button>
-            <div className="p-4 bg-purple-500 rounded-2xl mb-6 shadow-lg shadow-purple-500/20">
-              <Banknote size={48} className="text-white" />
-            </div>
+            <button onClick={() => setShowWithdrawModal(false)} className="absolute top-4 right-4 p-2 text-white/20 hover:text-white transition-colors"><X size={24} /></button>
+            <div className="p-4 bg-purple-500 rounded-2xl mb-6 shadow-lg shadow-purple-500/20"><Banknote size={48} className="text-white" /></div>
             <h2 className="text-3xl font-black text-white header-font tracking-tight mb-2">WITHDRAW PHP</h2>
             <p className="text-white/40 text-center text-xs uppercase tracking-widest mb-8">Convert Purple Gems to Philippine Peso</p>
-            
             <div className="w-full space-y-4">
               <div className="bg-black/40 border border-white/5 p-4 rounded-2xl flex justify-between items-center">
                 <div className="flex flex-col">
@@ -288,15 +233,10 @@ const MainMenu: React.FC<MainMenuProps> = ({ stats, onPlay }) => {
                   <span className="block text-xl font-black text-emerald-400 header-font italic">₱{(stats.purpleCrystals / 100).toFixed(2)}</span>
                 </div>
               </div>
-
               <div className="bg-indigo-500/10 border border-indigo-500/20 p-4 rounded-2xl flex items-center space-x-4">
                 <ArrowRightLeft size={20} className="text-indigo-400 shrink-0" />
-                <p className="text-[10px] text-indigo-300 font-bold uppercase leading-relaxed tracking-wider">
-                  Conversion Rate: 10,000 Gems = ₱100.00. 
-                  Min withdrawal: 5,000 Gems.
-                </p>
+                <p className="text-[10px] text-indigo-300 font-bold uppercase leading-relaxed tracking-wider">Conversion Rate: 10,000 Gems = ₱100.00. Min withdrawal: 5,000 Gems.</p>
               </div>
-
               <button 
                 className="w-full py-5 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl border-b-4 border-emerald-900 shadow-xl active:scale-95 transition-all text-white font-black header-font tracking-[0.2em] italic disabled:opacity-50 disabled:grayscale"
                 disabled={stats.purpleCrystals < 5000}
@@ -350,14 +290,8 @@ const ModeCard: React.FC<{ icon: React.ReactNode; title: string; desc: string; c
     onClick={onClick}
     className="group relative bg-slate-800/40 border border-white/10 p-6 md:p-12 rounded-[32px] md:rounded-[48px] hover:bg-slate-800/80 hover:border-sky-500/30 transition-all flex flex-col items-center text-center active:scale-95 shadow-2xl"
   >
-    {badge && (
-      <div className="absolute -top-4 md:-top-6 -right-2 md:-right-4 bg-emerald-500 text-white font-black text-[8px] md:text-[12px] px-3 md:px-5 py-1.5 md:py-2 rounded-full border-2 md:border-4 border-slate-950 shadow-xl animate-pulse">
-        {badge}
-      </div>
-    )}
-    <div className={`p-4 md:p-8 rounded-2xl md:rounded-3xl mb-4 md:mb-8 text-white ${color} shadow-2xl group-hover:scale-110 transition-transform`}>
-      {icon}
-    </div>
+    {badge && <div className="absolute -top-4 md:-top-6 -right-2 md:-right-4 bg-emerald-500 text-white font-black text-[8px] md:text-[12px] px-3 md:px-5 py-1.5 md:py-2 rounded-full border-2 md:border-4 border-slate-950 shadow-xl animate-pulse">{badge}</div>}
+    <div className={`p-4 md:p-8 rounded-2xl md:rounded-3xl mb-4 md:mb-8 text-white ${color} shadow-2xl group-hover:scale-110 transition-transform`}>{icon}</div>
     <h3 className="text-xl md:text-4xl font-black text-white header-font tracking-widest mb-2 md:mb-4 italic uppercase">{title}</h3>
     <p className="text-[9px] md:text-sm text-white/50 font-medium leading-relaxed uppercase tracking-wider">{desc}</p>
     <div className={`absolute bottom-4 inset-x-8 h-1 rounded-full ${color} opacity-0 group-hover:opacity-100 transition-opacity`}></div>
