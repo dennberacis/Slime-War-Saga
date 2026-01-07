@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { PlayerStats, SlimeUnit, SlimeType, Projectile } from '../types';
 import { SLIME_CONFIGS, getThemeForLevel } from '../constants';
-import { Sword, Undo2, Users, ShieldPlus, Gem, ChevronUp, Shield } from 'lucide-react';
+import { Sword, Undo2, Users, ShieldPlus, Gem, ChevronUp, Shield, Target, Castle, Skull, Swords } from 'lucide-react';
 import { getBattleStrategy } from '../services/geminiService';
 
 interface BattlefieldProps {
@@ -14,10 +14,16 @@ interface BattlefieldProps {
 const LAYOUT = {
   ASPECT_RATIO: '16/9',
   WORLD_WIDTH: 400, // The world is 4x wider than the viewport (0 to 400)
-  VIEWPORT_WIDTH: 100, // Viewport shows 100 units of world width
-  TOWER_LEFT: 10,
-  TOWER_RIGHT: 390,
+  // VIEWPORT_WIDTH removed in favor of dynamic state
+  TOWER_LEFT: 8,     // Positioned at start of world (with visual buffer)
+  TOWER_RIGHT: 392,  // Positioned at end of world (with visual buffer)
+  ROCK_OFFSET: 22,   // Distance from tower to rock (reachable in ~1.5s)
   LANE_BOTTOM: 22,
+};
+
+const ZOOM_LIMITS = {
+  MIN_WIDTH: 40,  // Max zoom in
+  MAX_WIDTH: 150, // Max zoom out (prevents seeing whole map of 400)
 };
 
 const GRAVITY = 0.02;
@@ -40,6 +46,112 @@ interface ExtendedSlimeUnit extends SlimeUnit {
   target?: 'rock' | 'tower';
 }
 
+const ResourceCrystal: React.FC<{ x: number; active: boolean }> = ({ x, active }) => (
+  <div 
+    className="absolute z-0 flex flex-col items-center origin-bottom"
+    style={{ left: `${x / 4}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}
+  >
+     <div className={`relative transition-all duration-300 ${active ? 'scale-110 drop-shadow-[0_0_15px_rgba(251,191,36,0.6)]' : 'scale-100 grayscale-[0.5]'}`}>
+        <div className="w-[8vw] h-[8vw] bg-gradient-to-br from-amber-200 via-amber-500 to-amber-700 clip-crystal animate-pulse-slow relative z-10">
+            <div className="absolute inset-0 bg-white/10 opacity-30 mix-blend-overlay"></div>
+            <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-white/40 to-transparent"></div>
+        </div>
+        <div className="absolute -bottom-1 -left-2 w-[10vw] h-[3vw] bg-slate-900/50 rounded-full z-0 blur-[2px]"></div>
+        {active && (
+           <div className="absolute inset-0 pointer-events-none">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 text-amber-300 font-black text-[1.2vw] animate-float-fast shadow-black drop-shadow-md">+5</div>
+           </div>
+        )}
+     </div>
+     <style>{`
+        .clip-crystal { clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); }
+        .animate-float-fast { animation: float-up 0.8s ease-out infinite; }
+        @keyframes float-up { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-2vw); opacity: 0; } }
+     `}</style>
+  </div>
+);
+
+const TowerVisual: React.FC<{ team: 'player' | 'enemy'; hp: number; maxHp: number; towerLevel: number }> = ({ team, hp, maxHp, towerLevel }) => {
+  const isPlayer = team === 'player';
+  const scale = 1 + (towerLevel - 1) * 0.1;
+
+  return (
+    <div className="flex flex-col items-center relative" style={{ transform: `scale(${scale})`, transformOrigin: 'bottom center' }}>
+       <div className="absolute -top-[4vw] w-[12vw] h-[1.2vw] bg-black/60 backdrop-blur-sm rounded-full border border-white/10 overflow-hidden shadow-lg">
+          <div 
+            className={`h-full transition-all duration-300 ease-out ${isPlayer ? 'bg-gradient-to-r from-sky-500 to-indigo-500' : 'bg-gradient-to-r from-red-500 to-rose-700'}`} 
+            style={{ width: `${Math.max(0, (hp/maxHp)*100)}%` }}
+          ></div>
+       </div>
+
+       <div className={`relative w-[14vw] h-[22vw] flex flex-col items-center justify-end transition-all duration-500`}>
+          <div className={`w-full h-[85%] ${isPlayer ? 'bg-slate-800' : 'bg-[#2a1a1a]'} rounded-t-3xl relative overflow-hidden border-x-2 ${isPlayer ? 'border-slate-600' : 'border-red-900/50'} shadow-2xl`}>
+              <div className="absolute inset-0 opacity-20 bg-gradient-to-b from-white/10 to-transparent"></div>
+              <div className="absolute top-[20%] left-1/2 -translate-x-1/2 w-[4vw] h-[4vw] bg-black rounded-full border-2 border-white/10 shadow-inner flex items-center justify-center">
+                  <div className={`w-[2vw] h-[2vw] rounded-full ${isPlayer ? 'bg-sky-400' : 'bg-red-500'} blur-sm animate-pulse`}></div>
+              </div>
+              {towerLevel >= 2 && <div className="absolute top-[50%] w-full h-[2px] bg-yellow-400/50 shadow-[0_0_10px_rgba(250,204,21,0.5)]"></div>}
+          </div>
+
+          <div className={`absolute top-0 w-[16vw] h-[6vw] ${isPlayer ? 'bg-indigo-900' : 'bg-red-950'} rounded-t-full flex items-center justify-center border-b-4 border-black/30 shadow-lg z-10`}>
+               <div className={`w-[1.5vw] h-[1.5vw] rounded-full ${isPlayer ? 'bg-sky-300' : 'bg-red-400'} shadow-[0_0_15px_currentColor]`}></div>
+          </div>
+          
+          {towerLevel >= 3 && <div className={`absolute -inset-4 rounded-full opacity-20 blur-xl ${isPlayer ? 'bg-sky-400' : 'bg-red-500'} animate-pulse`}></div>}
+          <div className="absolute bottom-0 w-[5vw] h-[7vw] bg-black rounded-t-full border-4 border-slate-700 shadow-[inset_0_10px_20px_rgba(0,0,0,0.8)]"></div>
+       </div>
+    </div>
+  );
+};
+
+const UnitRenderer: React.FC<{ unit: ExtendedSlimeUnit; towerLevel: number; command: string }> = ({ unit, towerLevel, command }) => {
+    const config = SLIME_CONFIGS[unit.type as SlimeType] || SLIME_CONFIGS.big_slime;
+    const isMining = unit.isMining;
+    const isAttacking = unit.lastAttackTime > 0 && (performance.now() - unit.lastAttackTime < 500);
+    const isMoving = !isMining && !isAttacking;
+    const mainColor = unit.team === 'player' ? config.color : 'bg-red-800';
+    const faceColor = unit.team === 'player' ? 'bg-white' : 'bg-yellow-300';
+    
+    return (
+        <div className={`relative flex flex-col items-center ${unit.isBigSlime ? 'scale-[1.8]' : ''} ${unit.isMini ? 'scale-[0.6]' : ''}`}>
+             <div 
+               className={`w-[6vw] h-[5vw] ${mainColor} rounded-t-[50%] rounded-b-[20%] relative shadow-[inset_-0.5vw_-0.5vw_1vw_rgba(0,0,0,0.3)] transition-transform duration-200
+               ${isMining ? 'animate-mining origin-bottom' : ''} 
+               ${isAttacking ? 'animate-lung' : ''}
+               ${isMoving ? 'animate-bounce-run' : ''}
+               `}
+             >
+                 <div className="absolute top-[35%] left-1/2 -translate-x-1/2 flex space-x-[1vw]">
+                     <div className={`w-[0.8vw] h-[0.8vw] ${faceColor} rounded-full shadow-sm`}></div>
+                     <div className={`w-[0.8vw] h-[0.8vw] ${faceColor} rounded-full shadow-sm`}></div>
+                 </div>
+                 
+                 <div className="absolute -right-[1vw] top-[0vw] text-[2vw] drop-shadow-md transform rotate-12">
+                    {config.icon}
+                 </div>
+
+                 {unit.type === 'miner' && unit.carriedGold && unit.carriedGold > 0 && (
+                     <div className="absolute -top-[2vw] left-1/2 -translate-x-1/2 bg-yellow-400 border border-yellow-600 px-1.5 py-0.5 rounded-full flex items-center shadow-lg z-20 animate-bounce">
+                        <span className="text-[1vw] mr-0.5">💎</span>
+                        <span className="text-[1vw] font-black text-amber-900 leading-none">{unit.carriedGold}</span>
+                     </div>
+                 )}
+             </div>
+
+             <div className="w-[5vw] h-[1vw] bg-black/30 rounded-full blur-[2px] mt-[-0.5vw] transition-all duration-200" style={{ transform: isMoving ? 'scale(0.8)' : 'scale(1)' }}></div>
+             
+             <style>{`
+                 @keyframes mining { 0% { transform: rotate(0deg) scaleY(1); } 50% { transform: rotate(-15deg) scaleY(0.9); } 100% { transform: rotate(0deg) scaleY(1); } }
+                 @keyframes lung { 0% { transform: translateX(0); } 30% { transform: translateX(1vw) scaleX(1.1); } 100% { transform: translateX(0); } }
+                 @keyframes bounce-run { 0%, 100% { transform: translateY(0) scale(1,1); } 50% { transform: translateY(-0.5vw) scale(0.95, 1.05); } }
+                 .animate-mining { animation: mining 0.8s infinite; }
+                 .animate-lung { animation: lung 0.4s ease-out; }
+                 .animate-bounce-run { animation: bounce-run 0.6s infinite; }
+             `}</style>
+        </div>
+    );
+};
+
 const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, onLose }) => {
   const [playerGold, setPlayerGold] = useState(250);
   const [enemyGold, setEnemyGold] = useState(200);
@@ -51,17 +163,24 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
   const [aiTip, setAiTip] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(true);
   const [floatingTexts, setFloatingTexts] = useState<{id: string, x: number, y: number, text: string}[]>([]);
-  const [cameraX, setCameraX] = useState(0); // Tracks current viewport offset in world units
+  const [cameraX, setCameraX] = useState(LAYOUT.TOWER_LEFT); // Start at player tower
+  const [viewportWidth, setViewportWidth] = useState(60); // Starts zoomed in (60 units wide vs 100 max)
+  const [isCameraLocked, setIsCameraLocked] = useState(true); // Auto-follow mode
   
   const [units, setUnits] = useState<ExtendedSlimeUnit[]>([]);
   const [projectiles, setProjectiles] = useState<Projectile[]>([]);
-  const [spawnQueue, setSpawnQueue] = useState<{type: string, team: 'player'|'enemy'}[]>([]);
+  const [spawnQueue, setSpawnQueue] = useState<{type: string, team: 'player'|'enemy', position?: number}[]>([]);
   const [playerCommand, setPlayerCommand] = useState<CommandType>('defend');
   const [cooldowns, setCooldowns] = useState<Record<string, number>>({});
   
   const gameLoopRef = useRef<number>(null);
   const lastUpdateRef = useRef<number>(performance.now());
   const projectilesRef = useRef<Projectile[]>([]);
+  
+  // Interaction Refs
+  const dragRef = useRef({ isDown: false, startX: 0, lastX: 0 });
+  const cameraTargetRef = useRef(LAYOUT.TOWER_LEFT);
+  const lastInteractionRef = useRef(performance.now()); // For camera snap-back
 
   const gameStateRef = useRef({
     units,
@@ -72,14 +191,27 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     spawnQueue,
     playerTowerLevel,
     cameraX,
-    playerCommand
+    playerCommand,
+    lastPlayerTowerAttack: 0,
+    lastEnemyTowerAttack: 0,
+    isCameraLocked,
+    viewportWidth
   });
 
   useEffect(() => {
-    gameStateRef.current = { 
-        units, enemyGold, playerGold, gameResult, isStarting, spawnQueue, playerTowerLevel, cameraX, playerCommand 
-    };
-  }, [units, enemyGold, playerGold, gameResult, isStarting, spawnQueue, playerTowerLevel, cameraX, playerCommand]);
+    // Sync ref with state
+    gameStateRef.current.units = units;
+    gameStateRef.current.enemyGold = enemyGold;
+    gameStateRef.current.playerGold = playerGold;
+    gameStateRef.current.gameResult = gameResult;
+    gameStateRef.current.isStarting = isStarting;
+    gameStateRef.current.spawnQueue = spawnQueue;
+    gameStateRef.current.playerTowerLevel = playerTowerLevel;
+    gameStateRef.current.cameraX = cameraX;
+    gameStateRef.current.playerCommand = playerCommand;
+    gameStateRef.current.isCameraLocked = isCameraLocked;
+    gameStateRef.current.viewportWidth = viewportWidth;
+  }, [units, enemyGold, playerGold, gameResult, isStarting, spawnQueue, playerTowerLevel, cameraX, playerCommand, isCameraLocked, viewportWidth]);
 
   useEffect(() => {
     let mounted = true;
@@ -93,6 +225,15 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     fetchStrategy();
     return () => { mounted = false; clearTimeout(loadingTimer); };
   }, [level, playerStats.selectedDeck]);
+
+  // Initial Enemy Scout Logic to define Combat Zone (30-50%)
+  useEffect(() => {
+    if (!isStarting) {
+      setTimeout(() => {
+        setSpawnQueue(prev => [...prev, { type: 'warrior', team: 'enemy', position: 250 }]);
+      }, 500);
+    }
+  }, [isStarting]);
 
   useEffect(() => {
     const queueInterval = setInterval(() => {
@@ -111,7 +252,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
           speed: next.type === 'miner' ? 0.25 : (next.type === 'tank' ? 0.15 : 0.22),
           range: next.type === 'archer' ? 38 : (next.type === 'mage' ? 48 : 8),
           cost: config.cost,
-          position: next.team === 'player' ? LAYOUT.TOWER_LEFT : LAYOUT.TOWER_RIGHT,
+          position: next.position ?? (next.team === 'player' ? LAYOUT.TOWER_LEFT : LAYOUT.TOWER_RIGHT),
           team: next.team,
           lastAttackTime: 0,
           lastSummonTime: performance.now(),
@@ -129,7 +270,13 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     return () => clearInterval(queueInterval);
   }, []);
 
+  // UI Interaction Helper to reset idle timer
+  const handleUiInteraction = () => {
+    lastInteractionRef.current = performance.now();
+  };
+
   const requestSpawn = (type: SlimeType | 'big_slime', team: 'player' | 'enemy', isSummon = false) => {
+    if (team === 'player') handleUiInteraction();
     if (gameResult || isStarting) return;
     const teamPop = units.filter(u => u.team === team).length + spawnQueue.filter(q => q.team === team).length;
     if (teamPop >= MAX_POP) return;
@@ -156,6 +303,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
   };
 
   const handleTowerUpgrade = () => {
+    handleUiInteraction();
     if (playerTowerLevel >= 3 || isStarting || gameResult) return;
     const nextLevelIndex = playerTowerLevel;
     const upgrade = TOWER_UPGRADES[nextLevelIndex];
@@ -166,6 +314,91 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
       setPlayerHP(prev => prev + upgrade.hpBonus);
     }
   };
+
+  const handleCommand = (cmd: CommandType) => {
+    handleUiInteraction();
+    setPlayerCommand(cmd);
+  }
+
+  // --- Camera Interaction Handlers ---
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // Safety Rule: Prevent UI clicks from triggering camera drag
+    if ((e.target as HTMLElement).closest('button')) return;
+    
+    dragRef.current = { isDown: true, startX: e.clientX, lastX: e.clientX };
+    lastInteractionRef.current = performance.now();
+    setIsCameraLocked(false);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragRef.current.isDown) return;
+    lastInteractionRef.current = performance.now();
+    const deltaPixel = dragRef.current.lastX - e.clientX;
+    dragRef.current.lastX = e.clientX;
+    
+    // Convert pixels to world units
+    // Screen width (px) = viewportWidth (units)
+    const sensitivity = gameStateRef.current.viewportWidth / window.innerWidth;
+    const deltaWorld = deltaPixel * sensitivity;
+    
+    cameraTargetRef.current += deltaWorld;
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    dragRef.current.isDown = false;
+    lastInteractionRef.current = performance.now();
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    if (gameStateRef.current.isCameraLocked) {
+        setIsCameraLocked(false);
+        gameStateRef.current.isCameraLocked = false;
+    }
+    lastInteractionRef.current = performance.now();
+    
+    setViewportWidth(prev => {
+        const zoomAmount = e.deltaY * 0.05;
+        const newWidth = prev + zoomAmount;
+        return Math.max(ZOOM_LIMITS.MIN_WIDTH, Math.min(ZOOM_LIMITS.MAX_WIDTH, newWidth));
+    });
+  };
+
+  const handleCameraJump = (target: 'player' | 'enemy' | 'combat') => {
+    handleUiInteraction();
+    // Reset interaction timer to prevent immediate snap-back
+    setIsCameraLocked(false);
+    
+    // Optimistic update for the loop
+    gameStateRef.current.isCameraLocked = false;
+
+    const currentViewportWidth = viewportWidth; // Use state
+    let targetX = cameraX;
+
+    if (target === 'player') {
+        targetX = LAYOUT.TOWER_LEFT;
+    } else if (target === 'enemy') {
+        targetX = LAYOUT.TOWER_RIGHT - currentViewportWidth;
+    } else if (target === 'combat') {
+        // Find center of combat
+        const playerUnits = units.filter(u => u.team === 'player' && !u.isDead);
+        const enemyUnits = units.filter(u => u.team === 'enemy' && !u.isDead);
+        
+        const pMax = playerUnits.length > 0 ? Math.max(...playerUnits.map(u => u.position)) : LAYOUT.TOWER_LEFT;
+        const eMin = enemyUnits.length > 0 ? Math.min(...enemyUnits.map(u => u.position)) : LAYOUT.TOWER_RIGHT;
+        
+        // Midpoint
+        const center = (pMax + eMin) / 2;
+        targetX = center - (currentViewportWidth / 2);
+    }
+
+    // Clamp
+    const minCamX = LAYOUT.TOWER_LEFT;
+    const maxCamX = LAYOUT.TOWER_RIGHT - currentViewportWidth;
+    cameraTargetRef.current = Math.max(minCamX, Math.min(maxCamX, targetX));
+  };
+  // ------------------------------------
 
   useEffect(() => {
     const logicInterval = setInterval(() => {
@@ -211,23 +444,105 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     const dt = Math.min(32, time - lastUpdateRef.current);
     lastUpdateRef.current = time;
 
+    // --- TOWER ATTACK LOGIC ---
+    const TOWER_RANGE = 140; 
+    const TOWER_COOLDOWN = 1500;
+
+    if (time - gameStateRef.current.lastPlayerTowerAttack > TOWER_COOLDOWN) {
+        const target = gameStateRef.current.units.find(u => 
+            u.team === 'enemy' && !u.isDead && u.position < (LAYOUT.TOWER_LEFT + TOWER_RANGE)
+        );
+        if (target) {
+            gameStateRef.current.lastPlayerTowerAttack = time;
+            const flightTime = Math.abs(target.position - LAYOUT.TOWER_LEFT) * 2 + 20;
+            projectilesRef.current.push({
+                id: `pt-${Math.random()}`,
+                type: 'magic',
+                team: 'player',
+                x: LAYOUT.TOWER_LEFT,
+                y: 8,
+                targetX: target.position,
+                targetId: target.id,
+                damage: 40 + (gameStateRef.current.playerTowerLevel * 20),
+                speed: 1,
+                vx: (target.position - LAYOUT.TOWER_LEFT) / flightTime,
+                vy: 0.5 * GRAVITY * flightTime,
+                isDone: false
+            });
+        }
+    }
+
+    if (time - gameStateRef.current.lastEnemyTowerAttack > TOWER_COOLDOWN) {
+        const target = gameStateRef.current.units.find(u => 
+            u.team === 'player' && !u.isDead && u.position > (LAYOUT.TOWER_RIGHT - TOWER_RANGE)
+        );
+        if (target) {
+            gameStateRef.current.lastEnemyTowerAttack = time;
+            const flightTime = Math.abs(target.position - LAYOUT.TOWER_RIGHT) * 2 + 20;
+            projectilesRef.current.push({
+                id: `et-${Math.random()}`,
+                type: 'magic',
+                team: 'enemy',
+                x: LAYOUT.TOWER_RIGHT,
+                y: 8,
+                targetX: target.position,
+                targetId: target.id,
+                damage: 40,
+                speed: 1,
+                vx: (target.position - LAYOUT.TOWER_RIGHT) / flightTime,
+                vy: 0.5 * GRAVITY * flightTime,
+                isDone: false
+            });
+        }
+    }
+
+    // --- CAMERA SNAP-BACK LOGIC ---
+    if (!gameStateRef.current.isCameraLocked && !dragRef.current.isDown) {
+        if (time - lastInteractionRef.current > 3000) {
+            setIsCameraLocked(true);
+            // Optimistically update ref so we don't spam state updates in subsequent frames
+            gameStateRef.current.isCameraLocked = true;
+        }
+    }
+
     setUnits(prev => {
       const next = prev.map(u => ({ ...u }));
       const toRemove = new Set<string>();
       const newSummons: ExtendedSlimeUnit[] = [];
 
-      // Determine Action Focus for Camera
-      const playerUnits = next.filter(u => u.team === 'player');
-      let targetCameraX = 0;
-      if (playerUnits.length > 0) {
-        const leadX = Math.max(...playerUnits.map(u => u.position));
-        targetCameraX = leadX - 50; 
-      } else {
-        targetCameraX = LAYOUT.TOWER_LEFT - 10;
+      // --- CAMERA & ZOOM LOGIC ---
+      if (gameStateRef.current.isCameraLocked) {
+        const activeCount = next.filter(u => !u.isDead).length;
+        const targetZoom = 60 + Math.min(activeCount, 20) / 20 * 40;
+        
+        setViewportWidth(prevW => {
+             const newW = prevW + (targetZoom - prevW) * 0.05;
+             return newW;
+        });
+      }
+
+      const currentViewportWidth = gameStateRef.current.viewportWidth;
+
+      // Auto Camera Logic (only if locked)
+      if (gameStateRef.current.isCameraLocked) {
+         const playerUnits = next.filter(u => u.team === 'player');
+         let autoTarget = LAYOUT.TOWER_LEFT;
+         if (playerUnits.length > 0) {
+             const leadX = Math.max(...playerUnits.map(u => u.position));
+             autoTarget = leadX - (currentViewportWidth * 0.4);
+         }
+         cameraTargetRef.current = autoTarget;
       }
       
-      const clampedTargetX = Math.max(0, Math.min(LAYOUT.WORLD_WIDTH - LAYOUT.VIEWPORT_WIDTH, targetCameraX));
-      setCameraX(prevX => prevX + (clampedTargetX - prevX) * 0.05);
+      // Clamp Camera Target
+      // Constraint: Viewport edges cannot go beyond Tower Centers.
+      const minCamX = LAYOUT.TOWER_LEFT;
+      const maxCamX = LAYOUT.TOWER_RIGHT - currentViewportWidth;
+      
+      cameraTargetRef.current = Math.max(minCamX, Math.min(maxCamX, cameraTargetRef.current));
+
+      // Lerp actual camera state
+      setCameraX(prevX => prevX + (cameraTargetRef.current - prevX) * 0.1);
 
       next.forEach(u => {
         // Mage Summon Logic
@@ -253,29 +568,24 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
 
         const myTower = u.team === 'player' ? LAYOUT.TOWER_LEFT : LAYOUT.TOWER_RIGHT;
         const enTower = u.team === 'player' ? LAYOUT.TOWER_RIGHT : LAYOUT.TOWER_LEFT;
-        const rockPos = u.team === 'player' ? LAYOUT.TOWER_LEFT + 25 : LAYOUT.TOWER_RIGHT - 25;
+        const rockPos = u.team === 'player' ? LAYOUT.TOWER_LEFT + LAYOUT.ROCK_OFFSET : LAYOUT.TOWER_RIGHT - LAYOUT.ROCK_OFFSET;
         
-        // --- COMMAND LOGIC ---
-        const command = u.team === 'player' ? gameStateRef.current.playerCommand : 'attack'; // Enemy always attacks for now
+        const command = u.team === 'player' ? gameStateRef.current.playerCommand : 'attack'; 
 
-        // 1. RETREAT LOGIC (Priority 1)
-        // Overrides everything. Units move to tower and vanish (are saved).
         if (command === 'retreat') {
-           u.isRetreating = true; // For visual flags if needed
-           u.target = undefined; // Clear combat targets
-           
+           u.isRetreating = true;
+           u.target = undefined;
            if (Math.abs(u.position - myTower) < 3) { 
-              toRemove.add(u.id); // Unit safely entered the tower
+              toRemove.add(u.id);
               return; 
            }
            const dir = u.position < myTower ? 1 : -1;
            u.position += dir * u.speed * (dt / 16);
-           return; // Skip other logic
+           return;
         } else {
            u.isRetreating = false;
         }
 
-        // 2. MINER LOGIC (Priority 2)
         if (u.type === 'miner') {
            const speedMultiplier = u.team === 'player' ? (gameStateRef.current.playerTowerLevel === 2 ? 1.15 : (gameStateRef.current.playerTowerLevel === 3 ? 1.3 : 1)) : 1;
            const currentHitInterval = MINER_HIT_INTERVAL / speedMultiplier;
@@ -315,10 +625,8 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
            return;
         }
 
-        // 3. COMBAT LOGIC (Attack / Defend)
         const boundaryP = LAYOUT.TOWER_LEFT + 2; 
         const boundaryE = LAYOUT.TOWER_RIGHT - 2;
-        // Optimization: pre-filter potential targets
         const enemies = next.filter(e => e.team !== u.team && !e.isDead && (e.team === 'player' ? e.position <= boundaryE : e.position >= boundaryP));
         let target: ExtendedSlimeUnit | null = null;
         let minDist = 1000;
@@ -329,27 +637,21 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
         });
 
         const towerDist = Math.abs(u.position - enTower);
-        // Tower is a valid target if attacking
         const isTargetingTower = !target && towerDist <= u.range; 
         const inRange = (target && minDist <= u.range) || isTargetingTower;
 
         if (command === 'defend') {
-            // DEFEND: Only attack if enemy enters range. DO NOT MOVE to chase.
             if (inRange) {
-               // Attack Logic
                if (time - u.lastAttackTime > 1200) {
                   performAttack(u, target, enTower, time, projectilesRef);
                }
             }
-            // Else: Hold Position.
         } else {
-            // ATTACK: Move forward, engage if in range.
             if (inRange) {
                if (time - u.lastAttackTime > 1200) {
                   performAttack(u, target, enTower, time, projectilesRef);
                }
             } else {
-               // Move Forward
                const dir = u.team === 'player' ? 1 : -1;
                u.position += dir * u.speed * (dt / 16);
             }
@@ -372,31 +674,24 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
           let hit = false;
           const targetTowerX = p.team === 'player' ? LAYOUT.TOWER_RIGHT : LAYOUT.TOWER_LEFT;
           
-          // Tower Hit Check
           if (Math.abs(p.x - targetTowerX) < 4 && p.y <= 5) {
             if (p.team === 'player') setEnemyHP(h => Math.max(0, h - p.damage));
             else setPlayerHP(h => Math.max(0, h - p.damage));
             hit = true;
           }
           
-          // Unit Hit Check
           if (!hit) {
             setUnits(uPrev => {
               uPrev.forEach(u => {
-                // Friendly fire check handled by target logic usually, but here just check opposite team
                 if (u.team !== p.team && !u.isDead && Math.abs(u.position - p.x) < 3 && p.y <= 5) {
                    const isSafe = u.team === 'player' ? u.position < (LAYOUT.TOWER_LEFT + 2) : u.position > (LAYOUT.TOWER_RIGHT - 2);
                    if (!isSafe) { 
-                      // Apply damage. If retreating, units are tougher (or prompt says "Do NOT die", but let's just apply damage for now)
-                      // Prompt: "Units do NOT die while retreating." -> We clamp HP at 1 if retreating.
                       const isRetreatingUnit = u.team === 'player' && gameStateRef.current.playerCommand === 'retreat';
-                      
                       if (isRetreatingUnit) {
                           u.health = Math.max(1, u.health - p.damage);
                       } else {
                           u.health -= p.damage; 
                       }
-                      
                       if (p.type === 'arrow') u.stuckArrows = (u.stuckArrows || 0) + 1; 
                       hit = true; 
                    }
@@ -411,7 +706,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     });
 
     gameLoopRef.current = requestAnimationFrame(update);
-  }, [gameResult, isStarting]);
+  }, [gameResult, isStarting]); // Removed viewportWidth dep
 
   useEffect(() => {
     gameLoopRef.current = requestAnimationFrame(update);
@@ -424,7 +719,6 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     if (playerHP <= 0) { setGameResult('lose'); setTimeout(onLose, 4000); }
   }, [enemyHP, playerHP, gameResult, onWin, onLose]);
 
-  // Helper for attacks
   const performAttack = (u: ExtendedSlimeUnit, target: ExtendedSlimeUnit | null, enTower: number, time: number, projRef: any) => {
       if (u.type === 'archer' || (u.type === 'mage' && !u.isMini)) {
          const tX = target ? target.position : enTower;
@@ -464,33 +758,46 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
   const upgradeAvailable = playerTowerLevel < 3;
   const nextUpgrade = upgradeAvailable ? TOWER_UPGRADES[playerTowerLevel] : null;
 
+  // Derived Zoom Scale for styles
+  const zoomScale = 100 / viewportWidth; 
+
   return (
-    <div className="w-full h-full bg-black flex items-center justify-center overflow-hidden">
-      <div className="relative w-full h-auto aspect-video max-h-screen bg-slate-900 overflow-hidden shadow-2xl border-y-2 border-slate-800">
+    <div 
+      className="w-full h-full bg-black flex items-center justify-center overflow-hidden"
+      style={{ touchAction: 'none' }} // Prevent scrolling on mobile
+      onWheel={handleWheel}
+    >
+      <div 
+        className={`relative w-full h-auto aspect-video max-h-screen bg-slate-900 overflow-hidden shadow-2xl border-y-2 border-slate-800 ${isCameraLocked ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+      >
         
-        {/* Parallax Background Layers */}
-        <div className="absolute inset-0 z-0 bg-[#0f172a]">
+        {/* Parallax Background Layers - Scaled by Zoom */}
+        <div className="absolute inset-0 z-0 bg-[#0f172a] pointer-events-none">
            <div className="absolute inset-0 bg-gradient-to-b from-[#1e1b4b] via-[#312e81] to-[#701a75]"></div>
            <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '60px 60px' }}></div>
            
-           <div className="absolute bottom-[21%] left-0 h-[45%] w-[800%] text-indigo-300/10 pointer-events-none transition-transform duration-100 ease-linear"
-                style={{ transform: `translateX(${-cameraX * 0.2}%)` }}>
+           <div className="absolute bottom-[21%] left-0 h-[45%] text-indigo-300/10 pointer-events-none transition-transform duration-100 ease-linear"
+                style={{ width: `${800 * zoomScale}%`, transform: `translateX(${-cameraX * 0.2}%)` }}>
               <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 4800 300">
                  <path d="M0,200 C600,100 1200,250 2400,120 C3600,250 4200,100 4800,200 L4800,300 L0,300 Z" fill="currentColor"/>
               </svg>
            </div>
            
-           <div className="absolute bottom-[21%] left-0 h-[25%] w-[600%] text-slate-900 pointer-events-none transition-transform duration-100 ease-linear"
-                style={{ transform: `translateX(${-cameraX * 0.5}%)` }}>
+           <div className="absolute bottom-[21%] left-0 h-[25%] text-slate-900 pointer-events-none transition-transform duration-100 ease-linear"
+                style={{ width: `${600 * zoomScale}%`, transform: `translateX(${-cameraX * 0.5}%)` }}>
               <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 3600 200">
                  <path d="M0,180 C450,150 900,190 1800,160 C2700,130 3150,170 3600,180 L3600,200 L0,200 Z" fill="currentColor"/>
               </svg>
            </div>
         </div>
 
-        {/* Scrolling World Container */}
+        {/* Scrolling World Container - Width dynamically adjusts with zoom */}
         <div className="absolute inset-0 z-10 pointer-events-none transition-transform duration-100 ease-linear"
-             style={{ transform: `translateX(${-cameraX}%)`, width: `${LAYOUT.WORLD_WIDTH}%` }}>
+             style={{ transform: `translateX(${-cameraX / 4}%)`, width: `${LAYOUT.WORLD_WIDTH * zoomScale}%` }}>
            
            <div className="absolute left-0 right-0 shadow-[0_-5px_30px_rgba(0,0,0,0.6)] z-0" style={{ bottom: 0, height: `${LAYOUT.LANE_BOTTOM}%` }}>
                 <div className="w-full h-full bg-gradient-to-b from-[#1e293b] to-[#020617] border-t border-white/5 relative overflow-hidden">
@@ -498,24 +805,22 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
                 </div>
            </div>
 
-           <ResourceCrystal x={LAYOUT.TOWER_LEFT + 25} active={isPlayerMining} />
-           <ResourceCrystal x={LAYOUT.TOWER_RIGHT - 25} active={isEnemyMining} />
+           <ResourceCrystal x={LAYOUT.TOWER_LEFT + LAYOUT.ROCK_OFFSET} active={isPlayerMining} />
+           <ResourceCrystal x={LAYOUT.TOWER_RIGHT - LAYOUT.ROCK_OFFSET} active={isEnemyMining} />
 
-           <div className="absolute" style={{ left: `${LAYOUT.TOWER_LEFT}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
+           <div className="absolute" style={{ left: `${LAYOUT.TOWER_LEFT / 4}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
               <TowerVisual team="player" hp={playerHP} maxHp={playerMaxHP} towerLevel={playerTowerLevel} />
            </div>
-           <div className="absolute" style={{ left: `${LAYOUT.TOWER_RIGHT}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
+           <div className="absolute" style={{ left: `${LAYOUT.TOWER_RIGHT / 4}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
               <TowerVisual team="enemy" hp={enemyHP} maxHp={2000 + level*200} towerLevel={1 + Math.floor(level/10)} />
            </div>
 
            {units.map(u => (
-             <div key={u.id} className="absolute transition-all duration-100 ease-linear" style={{ left: `${u.position}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
-                {/* Visual Wrapper for direction flipping */}
+             <div key={u.id} className="absolute transition-all duration-100 ease-linear" style={{ left: `${u.position / 4}%`, bottom: `${LAYOUT.LANE_BOTTOM}%`, transform: 'translateX(-50%)' }}>
                 <div className={`flex flex-col items-center justify-end transition-transform duration-300 ${
-                    // Face direction of movement or enemy
                     (u.team === 'player' && gameStateRef.current.playerCommand !== 'retreat') || (u.team === 'enemy') 
-                    ? '' // Player attacking/defending or Enemy attacking -> Face Right (Normal)
-                    : 'scale-x-[-1]' // Player Retreating -> Face Left (Flipped)
+                    ? '' 
+                    : 'scale-x-[-1]'
                 }`}>
                    <div className={`w-[4vw] h-[0.5vw] bg-black/50 rounded-full mb-[0.5vw] overflow-hidden ${u.team === 'enemy' ? 'scale-x-[-1]' : ''} ${u.isBigSlime ? 'w-[7vw] mb-[1vw]' : ''} ${u.isMini ? 'w-[2.5vw]' : ''}`}>
                       <div className={`h-full ${u.team === 'player' ? 'bg-sky-400' : 'bg-rose-500'}`} style={{ width: `${(u.health/u.maxHealth)*100}%` }}></div>
@@ -526,7 +831,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
            ))}
 
            {projectiles.map(p => (
-              <div key={p.id} className="absolute transition-all duration-100 ease-linear" style={{ left: `${p.x}%`, bottom: `${LAYOUT.LANE_BOTTOM + p.y}%` }}>
+              <div key={p.id} className="absolute transition-all duration-100 ease-linear" style={{ left: `${p.x / 4}%`, bottom: `${LAYOUT.LANE_BOTTOM + p.y}%` }}>
                  {p.type === 'arrow' ? (
                     <div className={`w-[1.5vw] h-[0.3vw] bg-white rounded-full shadow-sm origin-center ${p.vx > 0 ? 'rotate-[-10deg]' : 'rotate-[10deg]'}`}>
                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[0.4vw] h-[0.4vw] bg-slate-300 rotate-45"></div>
@@ -538,7 +843,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
            ))}
 
            {floatingTexts.map(ft => (
-              <div key={ft.id} className="absolute text-[0.8vw] font-black text-amber-400 animate-float" style={{ left: `${ft.x}%`, bottom: `${LAYOUT.LANE_BOTTOM + ft.y}%` }}>
+              <div key={ft.id} className="absolute text-[0.8vw] font-black text-amber-400 animate-float" style={{ left: `${ft.x / 4}%`, bottom: `${LAYOUT.LANE_BOTTOM + ft.y}%` }}>
                  <div className="flex items-center space-x-1">
                     <Gem size={12} />
                     <span>{ft.text}</span>
@@ -601,6 +906,42 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
                  </div>
               </div>
            </div>
+           
+           {/* Camera Jump Controls */}
+           <div className="absolute top-[20%] right-6 flex flex-col gap-3 pointer-events-auto items-end">
+                <div className="bg-slate-900/60 backdrop-blur-md p-1.5 rounded-full border border-white/10 flex flex-col gap-2 shadow-xl">
+                    <button 
+                        onClick={() => handleCameraJump('enemy')} 
+                        title="Enemy Base"
+                        className="w-10 h-10 bg-rose-900/80 backdrop-blur border border-rose-500/30 rounded-full flex items-center justify-center text-rose-200 hover:bg-rose-800 transition-all shadow-lg active:scale-95"
+                    >
+                        <Skull size={18} />
+                    </button>
+                    <button 
+                        onClick={() => handleCameraJump('combat')} 
+                        title="Combat Zone"
+                        className="w-10 h-10 bg-slate-800/80 backdrop-blur border border-white/20 rounded-full flex items-center justify-center text-white hover:bg-slate-700 hover:text-amber-400 transition-all shadow-lg active:scale-95"
+                    >
+                        <Swords size={18} />
+                    </button>
+                    <button 
+                        onClick={() => handleCameraJump('player')} 
+                        title="Player Base"
+                        className="w-10 h-10 bg-sky-900/80 backdrop-blur border border-sky-500/30 rounded-full flex items-center justify-center text-sky-200 hover:bg-sky-800 transition-all shadow-lg active:scale-95"
+                    >
+                        <Castle size={18} />
+                    </button>
+                </div>
+
+               {!isCameraLocked && (
+                 <button 
+                    onClick={() => setIsCameraLocked(true)}
+                    className="w-10 h-10 bg-slate-800/80 backdrop-blur border border-white/20 rounded-full flex items-center justify-center text-white/60 hover:text-sky-400 hover:bg-slate-800 hover:border-sky-400 transition-all shadow-lg active:scale-95 group"
+                 >
+                    <Target size={20} className="group-hover:animate-spin-slow" />
+                 </button>
+               )}
+           </div>
 
            <div className="w-full h-[18%] px-6 pb-2 flex justify-end items-end pointer-events-auto">
               <div className="flex flex-col gap-2 bg-slate-900/80 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-xl">
@@ -659,190 +1000,15 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
              50% { transform: rotate(-70deg) translateX(-0.3vw); }
              100% { transform: rotate(15deg) translateX(0); }
           }
+          @keyframes slash {
+             0% { transform: rotate(0deg) translate(0,0); }
+             25% { transform: rotate(45deg) translate(20%, -20%); }
+             50% { transform: rotate(-45deg) translate(-20%, 20%); }
+             100% { transform: rotate(0deg) translate(0,0); }
+          }
       `}</style>
     </div>
   );
-};
-
-const ResourceCrystal: React.FC<{ x: number; active: boolean }> = ({ x, active }) => (
-    <div 
-      className="absolute bottom-[20%] z-0 pointer-events-none transition-all duration-300" 
-      style={{ 
-        left: `${x}%`, 
-        transform: `translateX(-50%) scale(${active ? 1.15 : 1})`, 
-      }}
-    >
-      <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[15vw] h-[15vw] bg-gradient-radial from-fuchsia-500/30 via-purple-500/10 to-transparent blur-2xl ${active ? 'opacity-100 animate-pulse' : 'opacity-40'}`}></div>
-
-      <div className="relative w-[8vw] h-[10vw] flex items-end justify-center">
-         <div className={`relative w-full h-full ${active ? 'animate-[rainbow-rock-pulse_2s_infinite]' : ''}`}>
-            
-            <div className="absolute bottom-0 left-[5%] w-[30%] h-[60%] bg-gradient-to-t from-indigo-900 via-blue-600 to-cyan-300 rotate-[-35deg] origin-bottom shadow-lg skew-x-12" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
-            <div className="absolute bottom-0 right-[5%] w-[25%] h-[55%] bg-gradient-to-t from-purple-900 via-fuchsia-600 to-pink-300 rotate-[40deg] origin-bottom shadow-lg -skew-x-12" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
-
-            <div className="absolute bottom-0 left-[30%] w-[40%] h-[95%] bg-gradient-to-b from-white via-cyan-400 to-indigo-900 rotate-[-5deg] origin-bottom z-10 shadow-[0_0_20px_rgba(34,211,238,0.4)]" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}>
-               <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/40 to-transparent animate-[high-shimmer_3s_infinite]"></div>
-            </div>
-            
-            <div className="absolute bottom-0 left-[30%] w-[40%] h-[95%] z-11 mix-blend-overlay opacity-80" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)', background: 'linear-gradient(45deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)', backgroundSize: '200% 200%', animation: 'rainbow-move 4s linear infinite' }}></div>
-
-            <div className="absolute bottom-0 left-[15%] w-[20%] h-[40%] bg-gradient-to-t from-emerald-800 via-teal-400 to-white/90 rotate-[-50deg] origin-bottom z-20" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
-            <div className="absolute bottom-0 right-[20%] w-[25%] h-[50%] bg-gradient-to-t from-orange-800 via-amber-400 to-yellow-100 rotate-[25deg] origin-bottom z-20" style={{ clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }}></div>
-
-            <div className="absolute inset-0 z-30 pointer-events-none overflow-hidden" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 0 100%)' }}>
-               {[...Array(3)].map((_, i) => (
-                 <div key={i} className="absolute w-full h-[2px] bg-white/40 rotate-[45deg] animate-[shimmer-slide_4s_infinite]" style={{ top: `${i * 30}%`, animationDelay: `${i * 0.5}s` }}></div>
-               ))}
-            </div>
-
-            <div className="absolute inset-[-2vw] pointer-events-none">
-                {[...Array(6)].map((_, i) => (
-                    <div key={i} className="absolute w-[0.8vw] h-[0.8vw] text-white animate-sparkle" style={{ left: `${Math.random()*100}%`, top: `${Math.random()*100}%`, animationDelay: `${i*0.4}s` }}>✦</div>
-                ))}
-            </div>
-         </div>
-      </div>
-    </div>
-);
-
-const UnitRenderer: React.FC<{ unit: ExtendedSlimeUnit, towerLevel: number, command: CommandType }> = ({ unit, towerLevel, command }) => {
-   const isPlayer = unit.team === 'player';
-   const isMiner = unit.type === 'miner';
-   const baseSize = unit.isBigSlime ? 'w-[7vw] h-[7vw]' : (unit.isMini ? 'w-[2.5vw] h-[2.5vw]' : 'w-[4vw] h-[4vw]');
-   const colorClass = isMiner ? 'bg-emerald-500' : (isPlayer ? 'bg-sky-400' : 'bg-rose-500');
-
-   // Dynamic leaning based on command
-   let pose = '';
-   if (command === 'attack') pose = 'rotate-12'; // Lean forward
-   else if (command === 'defend') pose = '-rotate-6'; // Lean back
-   else if (command === 'retreat') pose = 'rotate-0'; // Upright run
-
-   return (
-      <div className={`relative ${baseSize} ${colorClass} rounded-t-[45%] rounded-b-[20%] shadow-lg border-2 border-white/10 flex items-center justify-center ${unit.isMining ? 'animate-bounce' : 'animate-squish'} ${pose} transition-all duration-300`}>
-         
-         {isMiner && towerLevel >= 2 && (
-             <div className={`absolute inset-[-1vw] rounded-full bg-purple-500/20 blur-md animate-pulse border border-purple-400/30 ${towerLevel === 3 ? 'bg-purple-500/40' : ''}`}>
-                {towerLevel === 3 && (
-                    <div className="absolute inset-0 overflow-hidden">
-                        {[...Array(5)].map((_, i) => (
-                            <div key={i} className="absolute text-[0.6vw] text-white animate-sparkle" style={{ left: `${Math.random()*100}%`, top: `${Math.random()*100}%`, animationDelay: `${i*0.2}s` }}>✦</div>
-                        ))}
-                    </div>
-                )}
-             </div>
-         )}
-
-         {isMiner && (
-             <>
-                 <div className="absolute -top-[12%] w-[85%] h-[35%] bg-yellow-400 rounded-t-full border-b-2 border-yellow-600 z-10 flex items-center justify-center shadow-md">
-                     <div className="w-[30%] h-[50%] bg-slate-800 rounded-sm border border-slate-600 flex items-center justify-center relative overflow-hidden mt-0.5">
-                         <div className={`w-[60%] h-[60%] rounded-full ${unit.isMining ? 'bg-white shadow-[0_0_10px_white]' : 'bg-white/40'}`}></div>
-                     </div>
-                 </div>
-
-                 <div className="absolute bottom-[2%] left-[-15%] w-[1.4vw] h-[2vw] bg-amber-900 rounded-md border-2 border-amber-950 z-[-1] rotate-[-8deg] shadow-lg">
-                    {(unit.carriedGold || 0) > 0 && (
-                        <div className="absolute -top-[0.5vw] left-1/2 -translate-x-1/2 w-[0.7vw] h-[0.7vw] bg-amber-400 rounded-sm border border-amber-600 shadow-sm animate-bounce flex items-center justify-center text-[0.4vw]">✨</div>
-                    )}
-                 </div>
-
-                 <div className={`absolute -right-[0.5vw] top-[45%] z-40 flex items-center transition-transform duration-200 ${unit.isMining ? 'animate-[mining-swing_0.5s_ease-in-out_infinite]' : 'rotate-[15deg]'}`}>
-                    <div className="w-[0.9vw] h-[0.5vw] bg-emerald-600 rounded-full border border-white/10 shadow-sm"></div>
-                    <div className="absolute left-[0.4vw] top-[-0.8vw] w-[1.8vw] h-[1.8vw] origin-bottom-left">
-                        <div className="absolute bottom-0 left-[20%] w-[12%] h-[95%] bg-[#5d3a1a] rounded-full border border-black/40 shadow-sm"></div>
-                        <div className="absolute top-[5%] left-[-0.6vw] w-[1.6vw] h-[0.4vw] flex items-center justify-center">
-                            <div className="absolute right-1/2 w-[0.9vw] h-[0.3vw] bg-slate-400 rounded-l-full rotate-[-25deg] origin-right border-t border-slate-200"></div>
-                            <div className="absolute left-1/2 w-[0.9vw] h-[0.3vw] bg-slate-400 rounded-r-full rotate-[25deg] origin-left border-t border-slate-200"></div>
-                            <div className="w-[0.4vw] h-[0.4vw] bg-slate-500 rounded-full z-10"></div>
-                        </div>
-                    </div>
-                 </div>
-             </>
-         )}
-
-         {!isMiner && (
-             <>
-                {unit.isBigSlime && <div className="absolute inset-2 bg-red-500/30 rounded-full blur-md animate-pulse"></div>}
-                {unit.type === 'mage' && (
-                    <>
-                    <div className="absolute inset-[-4px] rounded-full border border-purple-400/50 opacity-50 animate-ping"></div>
-                    <div className="absolute w-[40%] h-[40%] bg-purple-200 rotate-45 border border-white shadow-[0_0_10px_#d8b4fe]"></div>
-                    </>
-                )}
-                {(unit.type === 'warrior' || unit.type === 'tank') && (
-                    <div className="absolute bottom-0 w-full h-[40%] bg-slate-300 rounded-b-[18%] border-t-2 border-yellow-400/50 flex justify-center overflow-hidden">
-                    <div className="w-[80%] h-full bg-slate-400/50 skew-x-12"></div>
-                    </div>
-                )}
-             </>
-         )}
-
-         <div className="relative z-20 flex flex-col items-center translate-y-[-10%]">
-            <div className="flex space-x-[0.5vw]">
-               <div className="w-[0.6vw] h-[0.6vw] bg-slate-900 rounded-full relative overflow-hidden">
-                  <div className="absolute top-[20%] right-[20%] w-[35%] h-[35%] bg-white rounded-full"></div>
-               </div>
-               <div className="w-[0.6vw] h-[0.6vw] bg-slate-900 rounded-full relative overflow-hidden">
-                  <div className="absolute top-[20%] right-[20%] w-[35%] h-[35%] bg-white rounded-full"></div>
-               </div>
-            </div>
-         </div>
-      </div>
-   );
-};
-
-const TowerVisual: React.FC<{ team: 'player'|'enemy'; hp: number; maxHp: number; towerLevel: number }> = ({ team, hp, maxHp, towerLevel }) => {
-   const isPlayer = team === 'player';
-   const [isHit, setIsHit] = useState(false);
-   const prevHp = useRef(hp);
-   useEffect(() => {
-     if (hp < prevHp.current) {
-       setIsHit(true);
-       setTimeout(() => setIsHit(false), 400);
-     }
-     prevHp.current = hp;
-   }, [hp]);
-   
-   const theme = isPlayer 
-     ? { gradient: 'from-sky-300 via-sky-400 to-sky-600', border: 'border-sky-200', blush: 'bg-rose-400/40', crown: 'text-amber-300' } 
-     : { gradient: 'from-rose-400 via-rose-500 to-rose-700', border: 'border-rose-200', blush: 'bg-rose-300/40', crown: 'text-slate-300' };
-
-   const scale = towerLevel === 1 ? 'scale-100' : (towerLevel === 2 ? 'scale-110' : 'scale-120');
-
-   return (
-      <div className={`relative flex flex-col items-center justify-end w-[10vw] h-[12vw] pointer-events-none transition-transform duration-500 ${scale}`}>
-         <div className="absolute -top-[20%] w-[120%] flex flex-col items-center z-20">
-            <div className="w-full h-[0.8vw] bg-black/50 backdrop-blur-sm rounded-full border border-white/20 p-[1px] shadow-sm">
-                <div className={`h-full rounded-full transition-all duration-200 ease-out ${isPlayer ? 'bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.8)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.8)]'}`} 
-                     style={{ width: `${Math.max(0, (hp/maxHp)*100)}%` }}></div>
-            </div>
-            <span className="text-[0.8vw] font-black text-white drop-shadow-md mt-[0.2vw]">{Math.ceil(hp)}/{maxHp}</span>
-         </div>
-
-         <div className={`relative w-full h-full ${isHit ? 'animate-bounce' : 'animate-idle'}`}>
-            <div className={`absolute -top-[24%] left-1/2 -translate-x-1/2 text-[4vw] drop-shadow-xl z-10 ${theme.crown}`}>
-              {towerLevel >= 3 ? '⚔️👑⚔️' : (towerLevel === 2 ? '🛡️👑🛡️' : '👑')}
-            </div>
-            <div className={`w-full h-full rounded-t-[45%] rounded-b-[20%] bg-gradient-to-b ${theme.gradient} border-[0.3vw] ${theme.border} shadow-2xl relative overflow-hidden flex flex-col items-center pt-[20%]`}>
-               {towerLevel >= 2 && <div className="absolute bottom-0 inset-x-0 h-1/3 bg-slate-900/30 backdrop-blur-sm border-t-2 border-amber-400/50"></div>}
-               <div className="absolute top-[10%] left-[10%] w-[30%] h-[15%] bg-white/50 rounded-full rotate-[-20deg] blur-[1px]"></div>
-               <div className="relative z-10 flex flex-col items-center">
-                  <div className="flex space-x-[1.5vw]">
-                     <div className="w-[2vw] h-[2vw] bg-slate-900 rounded-full relative overflow-hidden">
-                        <div className="absolute top-[15%] right-[15%] w-[0.8vw] h-[0.8vw] bg-white rounded-full"></div>
-                        {isHit && <div className="absolute inset-0 bg-red-500/50 animate-pulse"></div>}
-                     </div>
-                     <div className="w-[2vw] h-[2vw] bg-slate-900 rounded-full relative overflow-hidden">
-                        <div className="absolute top-[15%] right-[15%] w-[0.8vw] h-[0.8vw] bg-white rounded-full"></div>
-                        {isHit && <div className="absolute inset-0 bg-red-500/50 animate-pulse"></div>}
-                     </div>
-                  </div>
-                  <div className={`mt-[0.2vw] w-[1vw] h-[0.5vw] bg-slate-900/80 rounded-b-full ${isHit ? 'h-[1.2vw] w-[1.2vw] rounded-full bg-slate-900' : ''}`}></div>
-               </div>
-            </div>
-         </div>
-      </div>
-   );
 };
 
 export default Battlefield;
