@@ -18,7 +18,7 @@ const LAYOUT = {
   TOWER_LEFT: 8,     // Positioned at start of world (with visual buffer)
   TOWER_RIGHT: 392,  // Positioned at end of world (with visual buffer)
   ROCK_OFFSET: 22,   // Distance from tower to rock (reachable in ~1.5s)
-  LANE_BOTTOM: 22,
+  LANE_BOTTOM: 28,   // Raised to 28% to keep action above the bottom UI
 };
 
 const ZOOM_LIMITS = {
@@ -39,6 +39,7 @@ const MINER_CAPACITY = 20;
 const MINER_HIT_INTERVAL = 1200;
 
 type CommandType = 'attack' | 'defend' | 'retreat';
+type CameraMode = 'player' | 'combat' | 'enemy' | 'manual';
 
 interface ExtendedSlimeUnit extends SlimeUnit {
   carriedGold?: number;
@@ -165,7 +166,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
   const [floatingTexts, setFloatingTexts] = useState<{id: string, x: number, y: number, text: string}[]>([]);
   const [cameraX, setCameraX] = useState(LAYOUT.TOWER_LEFT); // Start at player tower
   const [viewportWidth, setViewportWidth] = useState(60); // Starts zoomed in (60 units wide vs 100 max)
-  const [isCameraLocked, setIsCameraLocked] = useState(true); // Auto-follow mode
+  const [cameraMode, setCameraMode] = useState<CameraMode>('combat');
   
   const [units, setUnits] = useState<ExtendedSlimeUnit[]>([]);
   const [projectiles, setProjectiles] = useState<Projectile[]>([]);
@@ -194,7 +195,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     playerCommand,
     lastPlayerTowerAttack: 0,
     lastEnemyTowerAttack: 0,
-    isCameraLocked,
+    cameraMode,
     viewportWidth
   });
 
@@ -209,9 +210,9 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     gameStateRef.current.playerTowerLevel = playerTowerLevel;
     gameStateRef.current.cameraX = cameraX;
     gameStateRef.current.playerCommand = playerCommand;
-    gameStateRef.current.isCameraLocked = isCameraLocked;
+    gameStateRef.current.cameraMode = cameraMode;
     gameStateRef.current.viewportWidth = viewportWidth;
-  }, [units, enemyGold, playerGold, gameResult, isStarting, spawnQueue, playerTowerLevel, cameraX, playerCommand, isCameraLocked, viewportWidth]);
+  }, [units, enemyGold, playerGold, gameResult, isStarting, spawnQueue, playerTowerLevel, cameraX, playerCommand, cameraMode, viewportWidth]);
 
   useEffect(() => {
     let mounted = true;
@@ -327,7 +328,8 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     
     dragRef.current = { isDown: true, startX: e.clientX, lastX: e.clientX };
     lastInteractionRef.current = performance.now();
-    setIsCameraLocked(false);
+    setCameraMode('manual');
+    gameStateRef.current.cameraMode = 'manual';
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
@@ -352,9 +354,9 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
   };
 
   const handleWheel = (e: React.WheelEvent) => {
-    if (gameStateRef.current.isCameraLocked) {
-        setIsCameraLocked(false);
-        gameStateRef.current.isCameraLocked = false;
+    if (gameStateRef.current.cameraMode !== 'manual') {
+        setCameraMode('manual');
+        gameStateRef.current.cameraMode = 'manual';
     }
     lastInteractionRef.current = performance.now();
     
@@ -365,38 +367,11 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
     });
   };
 
-  const handleCameraJump = (target: 'player' | 'enemy' | 'combat') => {
+  const handleCameraJump = (target: CameraMode) => {
     handleUiInteraction();
-    // Reset interaction timer to prevent immediate snap-back
-    setIsCameraLocked(false);
-    
-    // Optimistic update for the loop
-    gameStateRef.current.isCameraLocked = false;
-
-    const currentViewportWidth = viewportWidth; // Use state
-    let targetX = cameraX;
-
-    if (target === 'player') {
-        targetX = LAYOUT.TOWER_LEFT;
-    } else if (target === 'enemy') {
-        targetX = LAYOUT.TOWER_RIGHT - currentViewportWidth;
-    } else if (target === 'combat') {
-        // Find center of combat
-        const playerUnits = units.filter(u => u.team === 'player' && !u.isDead);
-        const enemyUnits = units.filter(u => u.team === 'enemy' && !u.isDead);
-        
-        const pMax = playerUnits.length > 0 ? Math.max(...playerUnits.map(u => u.position)) : LAYOUT.TOWER_LEFT;
-        const eMin = enemyUnits.length > 0 ? Math.min(...enemyUnits.map(u => u.position)) : LAYOUT.TOWER_RIGHT;
-        
-        // Midpoint
-        const center = (pMax + eMin) / 2;
-        targetX = center - (currentViewportWidth / 2);
-    }
-
-    // Clamp
-    const minCamX = LAYOUT.TOWER_LEFT;
-    const maxCamX = LAYOUT.TOWER_RIGHT - currentViewportWidth;
-    cameraTargetRef.current = Math.max(minCamX, Math.min(maxCamX, targetX));
+    setCameraMode(target);
+    // Directly update ref for immediate response in game loop
+    gameStateRef.current.cameraMode = target;
   };
   // ------------------------------------
 
@@ -496,22 +471,36 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
         }
     }
 
-    // --- CAMERA SNAP-BACK LOGIC ---
-    if (!gameStateRef.current.isCameraLocked && !dragRef.current.isDown) {
-        if (time - lastInteractionRef.current > 3000) {
-            setIsCameraLocked(true);
-            // Optimistically update ref so we don't spam state updates in subsequent frames
-            gameStateRef.current.isCameraLocked = true;
-        }
-    }
-
     setUnits(prev => {
       const next = prev.map(u => ({ ...u }));
       const toRemove = new Set<string>();
       const newSummons: ExtendedSlimeUnit[] = [];
 
-      // --- CAMERA & ZOOM LOGIC ---
-      if (gameStateRef.current.isCameraLocked) {
+      // --- CAMERA MODE LOGIC ---
+      const { cameraMode, viewportWidth } = gameStateRef.current;
+
+      if (cameraMode === 'player') {
+         cameraTargetRef.current = LAYOUT.TOWER_LEFT;
+      } else if (cameraMode === 'enemy') {
+         cameraTargetRef.current = LAYOUT.TOWER_RIGHT - viewportWidth;
+      } else if (cameraMode === 'combat') {
+         const playerUnits = next.filter(u => u.team === 'player' && !u.isDead);
+         const enemyUnits = next.filter(u => u.team === 'enemy' && !u.isDead);
+         
+         if (playerUnits.length > 0 || enemyUnits.length > 0) {
+            const pMax = playerUnits.length > 0 ? Math.max(...playerUnits.map(u => u.position)) : LAYOUT.TOWER_LEFT;
+            const eMin = enemyUnits.length > 0 ? Math.min(...enemyUnits.map(u => u.position)) : LAYOUT.TOWER_RIGHT;
+            // Center of action
+            const center = (pMax + eMin) / 2;
+            cameraTargetRef.current = center - (viewportWidth / 2);
+         } else {
+            // Default to midway if no units
+            cameraTargetRef.current = (LAYOUT.WORLD_WIDTH / 2) - (viewportWidth / 2);
+         }
+      }
+      
+      // Auto-Zoom in Combat Mode
+      if (cameraMode === 'combat') {
         const activeCount = next.filter(u => !u.isDead).length;
         const targetZoom = 60 + Math.min(activeCount, 20) / 20 * 40;
         
@@ -521,28 +510,18 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
         });
       }
 
-      const currentViewportWidth = gameStateRef.current.viewportWidth;
-
-      // Auto Camera Logic (only if locked)
-      if (gameStateRef.current.isCameraLocked) {
-         const playerUnits = next.filter(u => u.team === 'player');
-         let autoTarget = LAYOUT.TOWER_LEFT;
-         if (playerUnits.length > 0) {
-             const leadX = Math.max(...playerUnits.map(u => u.position));
-             autoTarget = leadX - (currentViewportWidth * 0.4);
-         }
-         cameraTargetRef.current = autoTarget;
-      }
-      
       // Clamp Camera Target
-      // Constraint: Viewport edges cannot go beyond Tower Centers.
       const minCamX = LAYOUT.TOWER_LEFT;
-      const maxCamX = LAYOUT.TOWER_RIGHT - currentViewportWidth;
+      const maxCamX = LAYOUT.TOWER_RIGHT - gameStateRef.current.viewportWidth;
       
       cameraTargetRef.current = Math.max(minCamX, Math.min(maxCamX, cameraTargetRef.current));
 
-      // Lerp actual camera state
-      setCameraX(prevX => prevX + (cameraTargetRef.current - prevX) * 0.1);
+      // LERP Camera (Smooth Pan: 0.15 factor gives ~0.3-0.5s convergence)
+      setCameraX(prevX => prevX + (cameraTargetRef.current - prevX) * 0.15);
+
+      // --- SNAP BACK TO MANUAL TIMEOUT (Optional) ---
+      // If we want auto-return behavior after manual interaction, we can add it here. 
+      // Current requirement implies buttons control mode directly, so removing auto-lock timeout.
 
       next.forEach(u => {
         // Mage Summon Logic
@@ -761,6 +740,16 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
   // Derived Zoom Scale for styles
   const zoomScale = 100 / viewportWidth; 
 
+  // Helper for camera button styles
+  const getCameraBtnStyle = (mode: CameraMode, activeColor: string, activeBg: string) => {
+    const isActive = cameraMode === mode;
+    return `w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all active:scale-95 touch-manipulation ${
+      isActive 
+      ? `${activeBg} ${activeColor} shadow-[0_0_15px_currentColor] border-white/50 scale-110` 
+      : `${activeColor.replace('text-', 'text-opacity-60 text-')} border-white/10 bg-slate-800/50 hover:bg-slate-700`
+    } border`;
+  };
+
   return (
     <div 
       className="w-full h-full bg-black flex items-center justify-center overflow-hidden"
@@ -768,7 +757,7 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
       onWheel={handleWheel}
     >
       <div 
-        className={`relative w-full h-auto aspect-video max-h-screen bg-slate-900 overflow-hidden shadow-2xl border-y-2 border-slate-800 ${isCameraLocked ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
+        className={`relative w-full h-auto aspect-video max-h-screen bg-slate-900 overflow-hidden shadow-2xl border-y-2 border-slate-800 ${cameraMode === 'manual' ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -852,115 +841,105 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
            ))}
         </div>
 
-        {/* HUD */}
-        <div className="absolute inset-0 z-50 pointer-events-none flex flex-col justify-between">
-           <div className="w-full h-[15%] px-6 pt-2 flex justify-between items-start pointer-events-auto">
-              <div className="bg-slate-900/80 backdrop-blur rounded-full px-4 py-2 border border-white/10 flex items-center space-x-3 shadow-lg scale-90 origin-top-left">
-                 <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-xs font-bold text-white border border-white/20">PI</div>
-                 <span className="text-xs font-bold text-white tracking-widest header-font uppercase">COMMANDER</span>
+        {/* HUD Overlay */}
+        <div className="absolute inset-0 z-50 pointer-events-none flex flex-col justify-between safe-area-inset p-2 md:p-4">
+           
+           {/* TOP ROW */}
+           <div className="flex justify-between items-start w-full">
+              {/* Top Left: Resources */}
+              <div className="pointer-events-auto flex flex-col items-start gap-2">
+                  <div className="bg-slate-900/90 backdrop-blur rounded-full px-3 py-1.5 border border-white/10 flex items-center gap-3 shadow-lg">
+                      <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-xs font-bold text-white border border-white/20 shadow-inner">PI</div>
+                      <div className="flex flex-col leading-none">
+                        <span className="text-[10px] text-white/60 font-bold tracking-wider">COMMANDER</span>
+                        <span className="text-xs font-black text-white">{playerStats.username || "PLAYER"}</span>
+                      </div>
+                  </div>
+                  <div className="bg-slate-900/90 backdrop-blur rounded-2xl px-3 py-2 border border-white/10 flex items-center gap-4 shadow-lg">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-lg">🪨</span>
+                        <span className="text-sm font-black text-amber-400 header-font tracking-wide">{playerGold}</span>
+                      </div>
+                      <div className="w-px h-4 bg-white/20"></div>
+                      <div className="flex items-center gap-1.5">
+                          <Users size={14} className="text-white/60" />
+                          <span className={`text-sm font-bold header-font ${currentPop >= MAX_POP ? 'text-rose-400' : 'text-white'}`}>{currentPop}/{MAX_POP}</span>
+                      </div>
+                  </div>
               </div>
-              <div className="bg-slate-900/90 backdrop-blur-xl rounded-xl p-1 border border-white/10 flex space-x-1 shadow-2xl">
-                 {(['miner', 'warrior', 'tank', 'archer', 'mage', 'big_slime'] as any[]).map(type => {
-                    const cfg = SLIME_CONFIGS[type as SlimeType] || SLIME_CONFIGS.big_slime;
-                    const cd = cooldowns[type] || 0;
-                    const canAfford = playerGold >= cfg.cost;
-                    return (
-                       <button
-                          key={type}
-                          onClick={() => requestSpawn(type, 'player')}
-                          disabled={!canAfford || cd > 0 || isStarting}
-                          className={`relative w-[4vw] h-[4.5vw] max-w-[48px] max-h-[54px] rounded-lg flex flex-col items-center justify-center transition-all active:scale-95 border ${canAfford ? 'bg-slate-800 hover:bg-slate-700 border-white/10' : 'bg-slate-900 opacity-60 grayscale border-transparent'}`}
-                       >
-                          <span className="text-[1.5vw] max-text-[20px] drop-shadow-md mb-[2px]">{cfg.icon}</span>
-                          <div className="absolute bottom-0 w-full bg-black/50 text-[0.8vw] max-text-[9px] text-center text-white font-bold py-[1px] rounded-b-lg leading-none">{cfg.cost}</div>
-                          {cd > 0 && <div className="absolute inset-0 bg-black/70 rounded-lg flex items-center justify-center"><span className="text-[1.2vw] font-bold text-white">{(cd/1000).toFixed(0)}</span></div>}
-                       </button>
-                    );
-                 })}
-                 
+
+              {/* Top Right: Camera */}
+              <div className="pointer-events-auto flex gap-2">
+                  <div className="bg-slate-900/90 backdrop-blur rounded-full p-1.5 border border-white/10 flex items-center gap-1.5 shadow-lg">
+                      <button onClick={() => handleCameraJump('player')} className={getCameraBtnStyle('player', 'text-sky-300', 'bg-sky-500/20')}>
+                          <Castle size={14} />
+                      </button>
+                      <button onClick={() => handleCameraJump('combat')} className={getCameraBtnStyle('combat', 'text-amber-300', 'bg-amber-500/20')}>
+                          <Swords size={14} />
+                      </button>
+                      <button onClick={() => handleCameraJump('enemy')} className={getCameraBtnStyle('enemy', 'text-rose-300', 'bg-rose-500/20')}>
+                          <Skull size={14} />
+                      </button>
+                  </div>
+              </div>
+           </div>
+
+           {/* BOTTOM ROW */}
+           <div className="flex justify-between items-end w-full">
+              {/* Bottom Left: Commands */}
+              <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 shadow-xl flex gap-4">
+                 <button onClick={() => setPlayerCommand('attack')} className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-lg border-2 transition-all active:scale-95 touch-manipulation ${playerCommand === 'attack' ? 'bg-rose-600 border-white shadow-rose-500/50' : 'bg-slate-800 border-white/10 text-white/30'}`}>
+                    <Sword size={24} className={playerCommand === 'attack' ? 'text-white animate-pulse' : ''} />
+                 </button>
+                 <button onClick={() => setPlayerCommand('defend')} className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-lg border-2 transition-all active:scale-95 touch-manipulation ${playerCommand === 'defend' ? 'bg-blue-600 border-white shadow-blue-500/50' : 'bg-slate-800 border-white/10 text-white/30'}`}>
+                    <Shield size={24} className={playerCommand === 'defend' ? 'text-white' : ''} />
+                 </button>
+                 <button onClick={() => setPlayerCommand('retreat')} className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-lg border-2 transition-all active:scale-95 touch-manipulation ${playerCommand === 'retreat' ? 'bg-emerald-600 border-white shadow-emerald-500/50' : 'bg-slate-800 border-white/10 text-white/30'}`}>
+                    <Undo2 size={24} className={playerCommand === 'retreat' ? 'text-white' : ''} />
+                 </button>
+              </div>
+
+              {/* Bottom Right: Units Deck */}
+              <div className="pointer-events-auto flex items-end gap-2">
+                 <div className="bg-slate-900/90 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 shadow-xl flex gap-2 overflow-x-auto max-w-[50vw] no-scrollbar">
+                    {/* Units */}
+                    {(['miner', 'warrior', 'tank', 'archer', 'mage', 'big_slime'] as any[]).map(type => {
+                        const cfg = SLIME_CONFIGS[type as SlimeType] || SLIME_CONFIGS.big_slime;
+                        const cd = cooldowns[type] || 0;
+                        const canAfford = playerGold >= cfg.cost;
+                        
+                        return (
+                           <button
+                              key={type}
+                              onClick={() => requestSpawn(type, 'player')}
+                              disabled={!canAfford || cd > 0 || isStarting}
+                              className={`relative w-12 h-14 md:w-14 md:h-16 flex-shrink-0 rounded-lg flex flex-col items-center justify-center transition-all active:scale-95 border touch-manipulation ${canAfford ? 'bg-slate-800 hover:bg-slate-700 border-white/20' : 'bg-slate-900 opacity-60 grayscale border-transparent'}`}
+                           >
+                              <span className="text-xl md:text-2xl drop-shadow-md mb-1">{cfg.icon}</span>
+                              <div className="absolute bottom-0 w-full bg-black/60 text-[9px] md:text-[10px] text-center text-white font-bold py-0.5 rounded-b-lg">{cfg.cost}</div>
+                              {cd > 0 && <div className="absolute inset-0 bg-black/70 rounded-lg flex items-center justify-center z-10"><span className="text-xs font-bold text-white">{(cd/1000).toFixed(0)}</span></div>}
+                           </button>
+                        );
+                    })}
+                 </div>
+
+                 {/* Tower Upgrade Separate Button for Prominence */}
                  <button
                     onClick={handleTowerUpgrade}
                     disabled={!upgradeAvailable || (nextUpgrade && playerGold < nextUpgrade.cost) || isStarting}
-                    className={`relative w-[4vw] h-[4.5vw] max-w-[48px] max-h-[54px] rounded-lg flex flex-col items-center justify-center transition-all active:scale-95 border ${upgradeAvailable && nextUpgrade && playerGold >= nextUpgrade.cost ? 'bg-amber-900/60 hover:bg-amber-800 border-amber-400/50 shadow-[0_0_15px_rgba(251,191,36,0.3)]' : 'bg-slate-900 opacity-60 grayscale border-transparent'}`}
+                    className={`relative w-14 h-14 md:w-16 md:h-16 rounded-2xl flex flex-col items-center justify-center transition-all active:scale-95 border-2 shadow-xl touch-manipulation ${upgradeAvailable && nextUpgrade && playerGold >= nextUpgrade.cost ? 'bg-amber-600 border-amber-300 shadow-amber-500/40 animate-pulse-slow' : 'bg-slate-900 border-white/10 opacity-80 grayscale'}`}
                  >
-                    <div className="flex flex-col items-center -mt-1">
-                      <ShieldPlus className={`w-[1.8vw] h-[1.8vw] max-w-[20px] max-h-[20px] mb-1 ${upgradeAvailable && nextUpgrade && playerGold >= nextUpgrade.cost ? 'text-amber-400 animate-pulse' : 'text-slate-500'}`} />
-                      <div className="flex space-x-[2px] mb-1">
-                        {[1, 2, 3].map(lvl => (
-                          <div key={lvl} className={`w-[0.8vw] max-w-[10px] h-[3px] rounded-full transition-all duration-500 ${playerTowerLevel >= lvl ? 'bg-amber-400' : 'bg-black/40'}`} />
-                        ))}
-                      </div>
-                      <span className="text-[0.6vw] font-black text-white/80 tracking-tighter uppercase">{upgradeAvailable ? `LVL ${playerTowerLevel}` : 'MAX'}</span>
-                    </div>
-                    {upgradeAvailable && nextUpgrade && (
-                      <div className="absolute bottom-0 w-full bg-black/50 text-[0.8vw] max-text-[9px] text-center text-white font-bold py-[1px] rounded-b-lg leading-none">{nextUpgrade.cost}</div>
-                    )}
+                     <ShieldPlus size={20} className="text-white mb-0.5" />
+                     <span className="text-[9px] font-black text-white uppercase leading-none">{upgradeAvailable ? 'UPGR' : 'MAX'}</span>
+                     {upgradeAvailable && nextUpgrade && (
+                        <div className="absolute -top-2 -right-2 bg-black/80 text-amber-400 text-[9px] px-1.5 py-0.5 rounded-full border border-amber-500/50 font-bold">
+                            {nextUpgrade.cost}
+                        </div>
+                     )}
                  </button>
               </div>
-              <div className="bg-slate-900/80 backdrop-blur rounded-full px-4 py-2 border border-white/10 flex items-center space-x-4 shadow-lg scale-90 origin-top-right">
-                 <span className="text-sm font-black text-amber-400 header-font tracking-wide">🪨 {playerGold}</span>
-                 <div className="w-px h-4 bg-white/20"></div>
-                 <div className="flex items-center space-x-1.5">
-                    <Users size={14} className="text-white/60" />
-                    <span className="text-sm font-bold text-white header-font">{currentPop}/{MAX_POP}</span>
-                 </div>
-              </div>
-           </div>
-           
-           {/* Camera Jump Controls */}
-           <div className="absolute top-[20%] right-6 flex flex-col gap-3 pointer-events-auto items-end">
-                <div className="bg-slate-900/60 backdrop-blur-md p-1.5 rounded-full border border-white/10 flex flex-col gap-2 shadow-xl">
-                    <button 
-                        onClick={() => handleCameraJump('enemy')} 
-                        title="Enemy Base"
-                        className="w-10 h-10 bg-rose-900/80 backdrop-blur border border-rose-500/30 rounded-full flex items-center justify-center text-rose-200 hover:bg-rose-800 transition-all shadow-lg active:scale-95"
-                    >
-                        <Skull size={18} />
-                    </button>
-                    <button 
-                        onClick={() => handleCameraJump('combat')} 
-                        title="Combat Zone"
-                        className="w-10 h-10 bg-slate-800/80 backdrop-blur border border-white/20 rounded-full flex items-center justify-center text-white hover:bg-slate-700 hover:text-amber-400 transition-all shadow-lg active:scale-95"
-                    >
-                        <Swords size={18} />
-                    </button>
-                    <button 
-                        onClick={() => handleCameraJump('player')} 
-                        title="Player Base"
-                        className="w-10 h-10 bg-sky-900/80 backdrop-blur border border-sky-500/30 rounded-full flex items-center justify-center text-sky-200 hover:bg-sky-800 transition-all shadow-lg active:scale-95"
-                    >
-                        <Castle size={18} />
-                    </button>
-                </div>
-
-               {!isCameraLocked && (
-                 <button 
-                    onClick={() => setIsCameraLocked(true)}
-                    className="w-10 h-10 bg-slate-800/80 backdrop-blur border border-white/20 rounded-full flex items-center justify-center text-white/60 hover:text-sky-400 hover:bg-slate-800 hover:border-sky-400 transition-all shadow-lg active:scale-95 group"
-                 >
-                    <Target size={20} className="group-hover:animate-spin-slow" />
-                 </button>
-               )}
            </div>
 
-           <div className="w-full h-[18%] px-6 pb-2 flex justify-end items-end pointer-events-auto">
-              <div className="flex flex-col gap-2 bg-slate-900/80 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-xl">
-                {/* ATTACK COMMAND */}
-                <button onClick={() => setPlayerCommand('attack')} className={`w-[4vw] h-[4vw] max-w-[48px] max-h-[48px] rounded-xl flex items-center justify-center shadow-lg border-2 border-white/20 transition-all active:scale-90 ${playerCommand === 'attack' ? 'bg-rose-500 border-white shadow-[0_0_15px_rgba(244,63,94,0.5)]' : 'bg-slate-800 text-white/30'}`}>
-                   <Sword className={`w-[2vw] h-[2vw] max-w-[24px] max-h-[24px] ${playerCommand === 'attack' ? 'text-white animate-pulse' : ''}`} />
-                </button>
-                
-                {/* DEFEND COMMAND */}
-                <button onClick={() => setPlayerCommand('defend')} className={`w-[4vw] h-[4vw] max-w-[48px] max-h-[48px] rounded-xl flex items-center justify-center shadow-lg border-2 border-white/20 transition-all active:scale-90 ${playerCommand === 'defend' ? 'bg-blue-500 border-white shadow-[0_0_15px_rgba(59,130,246,0.5)]' : 'bg-slate-800 text-white/30'}`}>
-                   <Shield className={`w-[2vw] h-[2vw] max-w-[24px] max-h-[24px] ${playerCommand === 'defend' ? 'text-white' : ''}`} />
-                </button>
-
-                {/* RETREAT COMMAND */}
-                <button onClick={() => setPlayerCommand('retreat')} className={`w-[4vw] h-[4vw] max-w-[48px] max-h-[48px] rounded-xl flex items-center justify-center shadow-lg border-2 border-white/20 transition-all active:scale-90 ${playerCommand === 'retreat' ? 'bg-emerald-500 border-white shadow-[0_0_15px_rgba(16,185,129,0.5)]' : 'bg-slate-800 text-white/30'}`}>
-                   <Undo2 className={`w-[2vw] h-[2vw] max-w-[24px] max-h-[24px] ${playerCommand === 'retreat' ? 'text-white' : ''}`} />
-                </button>
-              </div>
-           </div>
         </div>
 
         {/* Loading Overlay */}
@@ -1005,6 +984,12 @@ const Battlefield: React.FC<BattlefieldProps> = ({ level, playerStats, onWin, on
              25% { transform: rotate(45deg) translate(20%, -20%); }
              50% { transform: rotate(-45deg) translate(-20%, 20%); }
              100% { transform: rotate(0deg) translate(0,0); }
+          }
+          .safe-area-inset {
+             padding-top: max(1rem, env(safe-area-inset-top));
+             padding-bottom: max(1rem, env(safe-area-inset-bottom));
+             padding-left: max(1rem, env(safe-area-inset-left));
+             padding-right: max(1rem, env(safe-area-inset-right));
           }
       `}</style>
     </div>
